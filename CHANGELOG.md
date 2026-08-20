@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-20
+
 ### Added
 - **Settings pane** (menu → *Settings…*, or ⌘,). Shows each provider as
   detected / not signed in / disabled, with the credential source and the
@@ -115,7 +117,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sign + notarize + staple), launch-at-login template, and an original
   CoreGraphics app icon.
 
-[Unreleased]: https://github.com/stavrop/ai-usage-monitor/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/stavrop/ai-usage-monitor/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/stavrop/ai-usage-monitor/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.1...v0.2.2
