@@ -65,6 +65,29 @@ xcrun stapler validate "$APP"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
+SHA="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
+VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+
+# Keep the in-repo cask template in lockstep with what we just built. This used
+# to be a manual step in RELEASE.md and it silently rotted twice, shipping a
+# template that pointed at an old version and sha. Doing it here means the only
+# remaining manual copy is the tap's own cask.
+TEMPLATE="packaging/ai-usage-monitor.rb"
+if [ -f "$TEMPLATE" ]; then
+  /usr/bin/sed -i '' -E \
+    -e "s/^  version \"[^\"]*\"$/  version \"$VERSION\"/" \
+    -e "s/^  sha256 \"[^\"]*\"$/  sha256 \"$SHA\"/" \
+    "$TEMPLATE"
+  # Fail loudly rather than quietly shipping a stale template.
+  grep -q "^  version \"$VERSION\"$" "$TEMPLATE" || { echo "ERROR: could not sync version in $TEMPLATE" >&2; exit 1; }
+  grep -q "^  sha256 \"$SHA\"$" "$TEMPLATE"     || { echo "ERROR: could not sync sha256 in $TEMPLATE" >&2; exit 1; }
+  echo "==> Synced $TEMPLATE -> $VERSION"
+fi
+
 echo "==> Done: $REPO/$ZIP (notarized + stapled)"
+echo "    version: $VERSION"
 echo "    sha256 (for the Homebrew cask):"
-shasum -a 256 "$ZIP"
+echo "    $SHA"
+echo
+echo "    Next: bump the tap cask (Casks/ai-usage-monitor.rb) to the same"
+echo "    version + sha256, or 'brew upgrade' will not see this build."

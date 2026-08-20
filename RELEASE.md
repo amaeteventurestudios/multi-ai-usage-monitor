@@ -12,6 +12,8 @@ repo) that points at it.
 3. **§2** — tag `vX.Y.Z`, push, and `gh release create` with the zip.
 4. **§3** — bump `version` + `sha256` in the tap's cask and push. **Don't skip
    this** — until the tap is updated, `brew upgrade` won't see the new version.
+   (`packaging/ai-usage-monitor.rb` in this repo is synced **automatically** by
+   `build_release.sh`; only the tap copy is manual.)
 
 ## 1. Build a notarized zip
 
@@ -65,9 +67,10 @@ brew fetch --cask stavrop/tap/ai-usage-monitor   # re-downloads, checks sha256
 brew audit  --cask stavrop/tap/ai-usage-monitor   # style/validity
 ```
 
-Users then get it with `brew upgrade --cask ai-usage-monitor`. Keep
-[`packaging/ai-usage-monitor.rb`](packaging/ai-usage-monitor.rb)
-in this repo in sync as the canonical template.
+Users then get it with `brew upgrade --cask ai-usage-monitor`.
+[`packaging/ai-usage-monitor.rb`](packaging/ai-usage-monitor.rb) is rewritten by
+`build_release.sh` on every build, so it can no longer drift from what shipped —
+it used to be a manual step and went stale twice.
 
 ### Graduating to official homebrew-cask (later)
 
