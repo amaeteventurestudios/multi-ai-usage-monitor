@@ -18,8 +18,8 @@
 # notability threshold — roughly 75 stars (or comparable forks/watchers). See
 # https://docs.brew.sh/Acceptable-Casks#rejected-casks
 cask "ai-usage-monitor" do
-  version "0.2.3"
-  sha256 "85bfbf1ef9c60481b3859e749cee44953952228a43020f77a408051305c781cd"
+  version "0.3.1"
+  sha256 "212176ce0f92cf773c37a7ab45988ab4afeaa21e94745535f972518059bbe591"
 
   url "https://github.com/stavrop/ai-usage-monitor/releases/download/v#{version}/ClaudeUsage.zip"
   name "AI Usage Monitor"
