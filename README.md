@@ -43,6 +43,21 @@ the other.
 > risk**. It authenticates only with the logins already on your Mac and sends each
 > token only to its own provider — no data goes anywhere else.
 
+## Settings
+
+Open **Settings…** from the menu (or ⌘,). The app never signs you in — credentials
+come from Claude Code and the ChatGPT app / Codex CLI — so the pane is about what
+was detected and how it's polled:
+
+- **Per provider:** whether it was detected, which credential it's reading, and the
+  account it last saw. Untick one to hide it from the menu bar entirely.
+- **Custom path:** point a provider at a non-default credential location, for
+  setups using `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or a credentials file rather
+  than the Keychain.
+- **Refresh every N minutes** (default 10, clamped 1–120) and **notify at N%**
+  (default 90, clamped 1–100). The threshold also drives the colour ramp, so a bar
+  turns red exactly when it would notify you.
+
 ## Requirements
 
 - macOS 12 (Monterey) or later.

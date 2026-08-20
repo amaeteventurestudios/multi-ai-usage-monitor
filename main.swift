@@ -21,8 +21,66 @@ let PRIVACY_URL = "https://stavrop.github.io/ai-usage-monitor/privacy.html"
 let TERMS_URL   = "https://stavrop.github.io/ai-usage-monitor/terms.html"
 // Public Claude Code OAuth client id.
 let OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-let REFRESH_INTERVAL: TimeInterval = 600   // 10 min; keep polling light to avoid rate limits (usage windows are 5h/7d)
-let ALERT_THRESHOLD = 90      // notify when a bucket reaches this %
+// Poll interval and alert threshold are user-configurable; their defaults live in
+// Settings.registerDefaults(). Polling is kept light by default to avoid rate
+// limits (the usage windows are hours-to-days long, so a fast poll buys nothing).
+
+// MARK: - Settings
+
+/// User-visible preferences, persisted in the app's user defaults. Every value
+/// has a sane default, so a fresh install behaves exactly as it did before the
+/// settings pane existed.
+enum Settings {
+    private static let d = UserDefaults.standard
+
+    static func registerDefaults() {
+        d.register(defaults: [
+            "provider.anthropic.enabled": true,
+            "provider.openai.enabled": true,
+            "refreshIntervalMinutes": 10,
+            "alertThresholdPercent": 90,
+        ])
+    }
+
+    static func isEnabled(_ p: ProviderID) -> Bool { d.bool(forKey: "provider.\(p.rawValue).enabled") }
+    static func setEnabled(_ p: ProviderID, _ v: Bool) { d.set(v, forKey: "provider.\(p.rawValue).enabled") }
+
+    /// Optional override for where a provider's credential lives, for installs
+    /// that don't use the default location (CLAUDE_CONFIG_DIR, CODEX_HOME, …).
+    /// Empty string means "use the default".
+    static func customPath(_ p: ProviderID) -> String? {
+        let v = d.string(forKey: "provider.\(p.rawValue).path") ?? ""
+        return v.isEmpty ? nil : v
+    }
+    static func setCustomPath(_ p: ProviderID, _ v: String?) {
+        d.set(v ?? "", forKey: "provider.\(p.rawValue).path")
+    }
+
+    /// Last account seen for a provider, cached so the settings pane can show
+    /// who you're signed in as without making a request when it opens.
+    static func accountLabel(_ p: ProviderID) -> String? {
+        let v = d.string(forKey: "provider.\(p.rawValue).account") ?? ""
+        return v.isEmpty ? nil : v
+    }
+    static func setAccountLabel(_ p: ProviderID, _ v: String?) {
+        d.set(v ?? "", forKey: "provider.\(p.rawValue).account")
+    }
+
+    /// Clamped to keep a mistyped value from hammering the API or never polling.
+    static var refreshInterval: TimeInterval {
+        let m = d.integer(forKey: "refreshIntervalMinutes")
+        return TimeInterval(min(120, max(1, m == 0 ? 10 : m)) * 60)
+    }
+    static var refreshIntervalMinutes: Int {
+        get { min(120, max(1, d.integer(forKey: "refreshIntervalMinutes") == 0 ? 10 : d.integer(forKey: "refreshIntervalMinutes"))) }
+        set { d.set(min(120, max(1, newValue)), forKey: "refreshIntervalMinutes") }
+    }
+
+    static var alertThreshold: Int {
+        get { min(100, max(1, d.integer(forKey: "alertThresholdPercent") == 0 ? 90 : d.integer(forKey: "alertThresholdPercent"))) }
+        set { d.set(min(100, max(1, newValue)), forKey: "alertThresholdPercent") }
+    }
+}
 
 // MARK: - Models
 
@@ -83,6 +141,9 @@ struct ProviderUsage {
     /// Free-text extra line (e.g. a ChatGPT credit balance with no known cap,
     /// which can't be drawn as a percentage bar).
     let note: String?
+    /// Who this data belongs to, shown in the settings pane (e.g. an email and
+    /// plan). nil when the provider's response doesn't identify the account.
+    let accountLabel: String?
 }
 
 // MARK: - Credentials (Keychain)
@@ -128,11 +189,25 @@ func runProcess(_ launchPath: String, _ args: [String], stdin: String? = nil) ->
     return (p.terminationStatus, o, e)
 }
 
+/// Where the Claude credential is being read from, for display in settings.
+func anthropicSource() -> String {
+    if let p = Settings.customPath(.anthropic) { return p }
+    return "Keychain · \(KEYCHAIN_SERVICE)"
+}
+
 func readCredentials() throws -> Credentials {
-    let (code, out, _) = runProcess("/usr/bin/security",
-        ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
-    guard code == 0 else { throw CredError.notFound }
-    let json = out.trimmingCharacters(in: .whitespacesAndNewlines)
+    let json: String
+    if let path = Settings.customPath(.anthropic) {
+        // Custom location: a JSON file with the same shape as the Keychain item.
+        guard let data = FileManager.default.contents(atPath: path),
+              let text = String(data: data, encoding: .utf8) else { throw CredError.notFound }
+        json = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else {
+        let (code, out, _) = runProcess("/usr/bin/security",
+            ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"])
+        guard code == 0 else { throw CredError.notFound }
+        json = out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     guard let data = json.data(using: .utf8),
           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let oauth = obj["claudeAiOauth"] as? [String: Any],
@@ -328,12 +403,17 @@ func fetchAnthropicUsage(token: String, completion: @escaping (Result<ProviderUs
         if let ws = weeklyScoped {
             buckets.append(Bucket(label: "Weekly (\(scopedName ?? "scoped"))", limit: ws))
         }
+        // The usage endpoint doesn't name the account, so fall back to the plan
+        // recorded on the credential itself.
+        let plan = (obj["subscription_type"] as? String)
+            ?? (obj["rate_limit_tier"] as? String)
         completion(.success(ProviderUsage(provider: .anthropic,
                                           buckets: buckets,
                                           headline: session ?? weeklyAll,
                                           credit: parseCredit(obj),
                                           creditLabel: "Credits (monthly)",
-                                          note: nil)))
+                                          note: nil,
+                                          accountLabel: plan.map { "plan: \($0)" })))
     }.resume()
 }
 
@@ -374,8 +454,10 @@ func jwtExpiry(_ token: String) -> Date? {
 
 /// nil when Codex/ChatGPT isn't signed in on this Mac — in which case we simply
 /// don't show a ChatGPT section at all.
+func codexAuthPath() -> String { Settings.customPath(.openai) ?? CODEX_AUTH_PATH }
+
 func readCodexAuth() -> CodexAuth? {
-    guard let data = FileManager.default.contents(atPath: CODEX_AUTH_PATH),
+    guard let data = FileManager.default.contents(atPath: codexAuthPath()),
           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let tokens = obj["tokens"] as? [String: Any],
           let access = tokens["access_token"] as? String, !access.isEmpty else { return nil }
@@ -458,12 +540,17 @@ func fetchOpenAIUsage(_ auth: CodexAuth,
             completion(.failure(NSError(domain: "parse", code: -2,
                 userInfo: [NSLocalizedDescriptionKey: "empty usage response"]))); return
         }
+        let email = obj["email"] as? String
+        let plan = obj["plan_type"] as? String
+        let account = [email, plan.map { "plan: \($0)" }]
+            .compactMap { $0 }.joined(separator: " · ")
         completion(.success(ProviderUsage(provider: .openai,
                                           buckets: buckets,
                                           headline: buckets.first?.limit,
                                           credit: nil,
                                           creditLabel: "Credits",
-                                          note: openAICreditNote(obj))))
+                                          note: openAICreditNote(obj),
+                                          accountLabel: account.isEmpty ? nil : account)))
     }.resume()
 }
 
@@ -660,7 +747,7 @@ final class UsageRowView: NSView {
     override var isFlipped: Bool { true }
 
     private func severityColors() -> (fillStart: NSColor, fillEnd: NSColor, text: NSColor) {
-        if percent >= ALERT_THRESHOLD {
+        if percent >= Settings.alertThreshold {
             return (NSColor(srgbRed: 1.00, green: 0.48, blue: 0.42, alpha: 1),
                     NSColor(srgbRed: 1.00, green: 0.30, blue: 0.43, alpha: 1),
                     NSColor(srgbRed: 0.95, green: 0.33, blue: 0.40, alpha: 1))
@@ -721,10 +808,228 @@ final class UsageRowView: NSView {
     }
 }
 
+// MARK: - Settings window
+
+/// Small preferences window. It doesn't sign anyone in — credentials come from
+/// Claude Code and ChatGPT/Codex — so its job is to show what was detected, let
+/// you hide a provider you don't care about, and point at a non-default
+/// credential location when someone's setup isn't in the usual place.
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    /// Called whenever a value changes, so the app can re-apply it immediately.
+    var onChange: (() -> Void)?
+
+    private var statusLabels: [ProviderID: NSTextField] = [:]
+    private var sourceLabels: [ProviderID: NSTextField] = [:]
+    private var accountLabels: [ProviderID: NSTextField] = [:]
+    private var intervalField: NSTextField!
+    private var thresholdField: NSTextField!
+
+    convenience init() {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 400),
+                         styleMask: [.titled, .closable],
+                         backing: .buffered, defer: false)
+        w.title = "AI Usage Monitor Settings"
+        w.isReleasedWhenClosed = false
+        self.init(window: w)
+        w.delegate = self
+        w.contentView = buildBody()
+        w.center()
+    }
+
+    private func label(_ text: String, size: CGFloat = NSFont.systemFontSize,
+                       color: NSColor = .labelColor, bold: Bool = false) -> NSTextField {
+        let l = NSTextField(labelWithString: text)
+        l.font = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
+        l.textColor = color
+        l.lineBreakMode = .byTruncatingMiddle
+        return l
+    }
+
+    private func buildBody() -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(top: 18, left: 20, bottom: 18, right: 20)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.addArrangedSubview(label("Providers", size: 13, bold: true))
+        for id in ProviderID.allCases { stack.addArrangedSubview(providerBlock(id)) }
+
+        let sep = NSBox(); sep.boxType = .separator
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(sep)
+        sep.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -40).isActive = true
+
+        // Refresh interval
+        intervalField = NSTextField(string: "\(Settings.refreshIntervalMinutes)")
+        intervalField.alignment = .right
+        intervalField.target = self; intervalField.action = #selector(commitNumbers)
+        intervalField.translatesAutoresizingMaskIntoConstraints = false
+        intervalField.widthAnchor.constraint(equalToConstant: 52).isActive = true
+        let ir = NSStackView(views: [label("Refresh every"), intervalField, label("minutes")])
+        ir.orientation = .horizontal; ir.spacing = 8
+        stack.addArrangedSubview(ir)
+
+        // Alert threshold
+        thresholdField = NSTextField(string: "\(Settings.alertThreshold)")
+        thresholdField.alignment = .right
+        thresholdField.target = self; thresholdField.action = #selector(commitNumbers)
+        thresholdField.translatesAutoresizingMaskIntoConstraints = false
+        thresholdField.widthAnchor.constraint(equalToConstant: 52).isActive = true
+        let tr = NSStackView(views: [label("Notify when a bucket reaches"), thresholdField, label("%")])
+        tr.orientation = .horizontal; tr.spacing = 8
+        stack.addArrangedSubview(tr)
+
+        let hint = label("Credentials come from Claude Code and the ChatGPT app / Codex CLI. "
+                       + "This app never signs you in and never writes ~/.codex/auth.json.",
+                         size: 11, color: .secondaryLabelColor)
+        hint.lineBreakMode = .byWordWrapping
+        hint.usesSingleLineMode = false
+        hint.preferredMaxLayoutWidth = 400
+        stack.addArrangedSubview(hint)
+
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
+        ])
+        return container
+    }
+
+    private func providerBlock(_ id: ProviderID) -> NSView {
+        let box = NSStackView()
+        box.orientation = .vertical
+        box.alignment = .leading
+        box.spacing = 2
+
+        let check = NSButton(checkboxWithTitle: id.displayName, target: self, action: #selector(toggleProvider(_:)))
+        check.state = Settings.isEnabled(id) ? .on : .off
+        check.tag = ProviderID.allCases.firstIndex(of: id) ?? 0
+        check.font = NSFont.systemFont(ofSize: 13)
+
+        let status = label("", size: 11)
+        statusLabels[id] = status
+        let head = NSStackView(views: [check, status])
+        head.orientation = .horizontal; head.spacing = 8
+        box.addArrangedSubview(head)
+
+        let source = label("", size: 11, color: .secondaryLabelColor)
+        source.preferredMaxLayoutWidth = 400
+        sourceLabels[id] = source
+        box.addArrangedSubview(source)
+
+        let account = label("", size: 11, color: .secondaryLabelColor)
+        accountLabels[id] = account
+        box.addArrangedSubview(account)
+
+        let choose = NSButton(title: "Custom path…", target: self, action: #selector(chooseTapped(_:)))
+        choose.bezelStyle = .rounded
+        choose.controlSize = .small
+        choose.tag = ProviderID.allCases.firstIndex(of: id) ?? 0
+        let clear = NSButton(title: "Use default", target: self, action: #selector(clearTapped(_:)))
+        clear.bezelStyle = .rounded
+        clear.controlSize = .small
+        clear.tag = choose.tag
+        let row = NSStackView(views: [choose, clear])
+        row.orientation = .horizontal; row.spacing = 6
+        box.addArrangedSubview(row)
+
+        return box
+    }
+
+    /// Re-read detection state. Called on open and after any change, so the dots
+    /// reflect reality rather than whatever was true when the window was built.
+    func refreshStatus() {
+        for id in ProviderID.allCases {
+            let detected: Bool
+            let source: String
+            switch id {
+            case .anthropic:
+                detected = (try? readCredentials()) != nil
+                source = anthropicSource()
+            case .openai:
+                detected = readCodexAuth() != nil
+                source = codexAuthPath()
+            }
+            let enabled = Settings.isEnabled(id)
+            let sl = statusLabels[id]
+            if !enabled {
+                sl?.stringValue = "○ disabled"
+                sl?.textColor = .tertiaryLabelColor
+            } else if detected {
+                sl?.stringValue = "● detected"
+                sl?.textColor = .systemGreen
+            } else {
+                sl?.stringValue = "○ not signed in"
+                sl?.textColor = .secondaryLabelColor
+            }
+            sourceLabels[id]?.stringValue = source
+            accountLabels[id]?.stringValue = Settings.accountLabel(id) ?? ""
+        }
+    }
+
+    func show() {
+        refreshStatus()
+        intervalField.stringValue = "\(Settings.refreshIntervalMinutes)"
+        thresholdField.stringValue = "\(Settings.alertThreshold)"
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func provider(for tag: Int) -> ProviderID {
+        ProviderID.allCases[min(max(0, tag), ProviderID.allCases.count - 1)]
+    }
+
+    @objc private func toggleProvider(_ sender: NSButton) {
+        Settings.setEnabled(provider(for: sender.tag), sender.state == .on)
+        refreshStatus(); onChange?()
+    }
+
+    @objc private func chooseTapped(_ sender: NSButton) {
+        let id = provider(for: sender.tag)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = id == .openai
+            ? "Choose the Codex auth.json to read (read-only)."
+            : "Choose a JSON file holding the Claude credential."
+        panel.begin { [weak self] resp in
+            guard resp == .OK, let url = panel.url else { return }
+            Settings.setCustomPath(id, url.path)
+            self?.refreshStatus(); self?.onChange?()
+        }
+    }
+
+    @objc private func clearTapped(_ sender: NSButton) {
+        Settings.setCustomPath(provider(for: sender.tag), nil)
+        refreshStatus(); onChange?()
+    }
+
+    @objc private func commitNumbers() {
+        if let v = Int(intervalField.stringValue) { Settings.refreshIntervalMinutes = v }
+        if let v = Int(thresholdField.stringValue) { Settings.alertThreshold = v }
+        intervalField.stringValue = "\(Settings.refreshIntervalMinutes)"
+        thresholdField.stringValue = "\(Settings.alertThreshold)"
+        onChange?()
+    }
+
+    func windowWillClose(_ notification: Notification) { commitNumbers() }
+}
+
 // MARK: - App
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     let tipJar = TipJarController()
+    lazy var settingsWC: SettingsWindowController = {
+        let wc = SettingsWindowController()
+        wc.onChange = { [weak self] in self?.applySettings() }
+        return wc
+    }()
     var statusItem: NSStatusItem!
     var timer: Timer?
     var tickTimer: Timer?
@@ -747,7 +1052,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Key by provider too, so Claude's and ChatGPT's identically-named
         // buckets can't suppress each other's notifications.
         let key = "\(provider.rawValue).\(name)"
-        if l.percent < ALERT_THRESHOLD {
+        if l.percent < Settings.alertThreshold {
             // Below threshold: clear so a later crossing (e.g. unknown reset) re-fires.
             if l.resetsAt == nil { alertedFor[key] = nil }
             return
@@ -762,21 +1067,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Settings.registerDefaults()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "AI Usage …"
         let menu = NSMenu()
         menu.autoenablesItems = false
         statusItem.menu = menu
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: REFRESH_INTERVAL, repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
+        startPollTimer()
         // Lightweight, local: re-render the countdown each minute (no network).
         tickTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.renderTitle()
         }
         // Gentle, skippable nudge on launch (until the user opts out).
         tipJar.showIfNeeded()
+    }
+
+    /// (Re)arm the poll timer at the interval currently configured.
+    func startPollTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: Settings.refreshInterval, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+    }
+
+    /// Re-apply preferences after the settings window changes something: drop any
+    /// provider that was just disabled, re-arm the timer at the new interval, and
+    /// poll immediately so the effect is visible straight away.
+    func applySettings() {
+        for id in ProviderID.allCases where !Settings.isEnabled(id) {
+            usageByProvider[id] = nil
+            errorByProvider[id] = nil
+            retryWork[id]?.cancel()
+            retryWork[id] = nil
+        }
+        startPollTimer()
+        rebuildMenu()
+        renderTitle()
+        refresh()
     }
 
     func setTitle(_ s: String) {
@@ -864,10 +1192,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Poll every provider. Each is independent: one being signed out, expired or
     /// rate-limited has no effect on the other.
     func refresh() {
-        for id in ProviderID.allCases { refresh(id) }
+        for id in ProviderID.allCases where Settings.isEnabled(id) { refresh(id) }
     }
 
     func refresh(_ provider: ProviderID) {
+        guard Settings.isEnabled(provider) else { return }
         switch provider {
         case .anthropic: refreshAnthropic()
         case .openai:    refreshOpenAI()
@@ -918,6 +1247,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self.usageByProvider[provider] = usage
                 self.errorByProvider[provider] = nil
+                Settings.setAccountLabel(provider, usage.accountLabel)
                 self.lastUpdated = Date()
                 self.renderTitle()
                 for b in usage.buckets { self.maybeAlert(provider, b.label, b.limit) }
@@ -1033,6 +1363,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             refreshItem.target = self
             menu.addItem(refreshItem)
 
+            let settingsItem = NSMenuItem(title: "Settings…", action: #selector(self.openSettings), keyEquivalent: ",")
+            settingsItem.target = self
+            menu.addItem(settingsItem)
+
             if !DONATION_LINKS.isEmpty {
                 let support = NSMenuItem(title: "Support this app…", action: #selector(self.openTipJar), keyEquivalent: "")
                 support.target = self
@@ -1058,6 +1392,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func manualRefresh() { refresh() }
+
+    @objc func openSettings() { settingsWC.show() }
 
     @objc func openTipJar() { tipJar.show() }
 

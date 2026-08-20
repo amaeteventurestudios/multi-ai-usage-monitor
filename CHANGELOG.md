@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Settings pane** (menu → *Settings…*, or ⌘,). Shows each provider as
+  detected / not signed in / disabled, with the credential source and the
+  account it last saw. Lets you hide a provider you don't want in the menu bar,
+  point at a **custom credential path** for non-default installs
+  (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …), and set the **poll interval** and
+  **alert threshold**.
+- The alert threshold now also drives the colour ramp, so a bar turns red at the
+  same point the notification fires.
+
+### Changed
+- Poll interval and alert threshold moved from compile-time constants into
+  preferences (defaults unchanged: 10 minutes, 90%). Both are clamped
+  (1–120 minutes, 1–100%) so a mistyped value can't hammer the API or disable
+  polling entirely.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added
