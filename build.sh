@@ -22,10 +22,10 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key><string>$APP_NAME</string>
-    <key>CFBundleDisplayName</key><string>Usage Monitor for Claude</string>
+    <key>CFBundleDisplayName</key><string>AI Usage Monitor</string>
     <key>CFBundleIdentifier</key><string>com.local.claudeusage</string>
-    <key>CFBundleVersion</key><string>0.2.3</string>
-    <key>CFBundleShortVersionString</key><string>0.2.3</string>
+    <key>CFBundleVersion</key><string>0.3.0</string>
+    <key>CFBundleShortVersionString</key><string>0.3.0</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
     <key>CFBundleIconFile</key><string>ClaudeUsage</string>
     <key>CFBundlePackageType</key><string>APPL</string>

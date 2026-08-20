@@ -1,4 +1,4 @@
-# Contributing to Usage Monitor for Claude
+# Contributing to AI Usage Monitor
 
 Thanks for your interest! This is a small, free, open-source macOS menu bar app.
 Bug reports, fixes, and focused features are welcome.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Usage Monitor for Claude — Privacy Policy</title>
+<title>AI Usage Monitor — Privacy Policy</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -24,29 +24,33 @@
 </head>
 <body>
 <div class="wrap">
-  <a class="brand" href="./"><span class="glyph">⛏</span> Usage Monitor for Claude</a>
+  <a class="brand" href="./"><span class="glyph">⛏</span> AI Usage Monitor</a>
 
   <h1>Privacy Policy</h1>
   <p class="updated">Last updated 29 July 2026</p>
 
   <p class="lead"><strong>This app has no servers and collects nothing.</strong>
-  Everything happens on your Mac, and the only service it talks to is Anthropic,
-  reusing the Claude Code login you already have.</p>
+  Everything happens on your Mac, and the only services it talks to are Anthropic
+  and OpenAI, reusing the Claude Code and ChatGPT/Codex logins you already have.</p>
 
   <h2>Scope</h2>
-  <p>This policy covers the Usage Monitor for Claude macOS app (“the app”),
+  <p>This policy covers the AI Usage Monitor macOS app (“the app”),
   distributed at
-  <a href="https://github.com/stavrop/usage-monitor-for-claude">github.com/stavrop/usage-monitor-for-claude</a>
+  <a href="https://github.com/stavrop/ai-usage-monitor">github.com/stavrop/ai-usage-monitor</a>
   and via the <code>stavrop/tap</code> Homebrew tap.</p>
 
   <h2>What the app collects</h2>
   <p><strong>Nothing — for the developer.</strong> There is no server, no analytics,
   no telemetry, no crash reporting, no tracking, and no account with the developer.
   The developer never receives your credentials or your usage data. The app runs
-  entirely on your Mac and communicates <strong>only with Anthropic's servers</strong>
-  to read your usage.</p>
+  entirely on your Mac and communicates <strong>only with Anthropic's and OpenAI's
+  servers</strong> to read your usage.</p>
 
   <h2>Credentials it uses</h2>
+  <p>The app uses only logins that are already on your Mac. It never asks you to
+  sign in, and only ever contacts each provider with that provider's own token. If
+  a provider isn't signed in, the app doesn't show it and makes no requests to it.</p>
+  <h3>Claude (Anthropic)</h3>
   <ul>
     <li>The app reads the OAuth credential that <strong>Claude Code</strong> already
     stores in your login <strong>Keychain</strong> (item <code>Claude Code-credentials</code>).
@@ -56,22 +60,38 @@
     (<code>api.anthropic.com</code>, <code>platform.claude.com</code>) to read your
     usage — never anywhere else, and never to the developer.</li>
   </ul>
+  <h3>ChatGPT (OpenAI)</h3>
+  <ul>
+    <li>The app reads the OAuth credential that the <strong>ChatGPT desktop app</strong>
+    or <strong>Codex CLI</strong> stores at <code>~/.codex/auth.json</code>. This is
+    <strong>read-only</strong>: the app never writes to that file and never refreshes
+    that token, because those tools own it. An expired token is reported in the menu
+    instead.</li>
+    <li>That token is sent <strong>only to OpenAI's own host</strong>
+    (<code>chatgpt.com</code>) to read your usage — never anywhere else, and never
+    to the developer.</li>
+  </ul>
 
   <h2>Data stored locally on your Mac</h2>
   <ul>
     <li>The Claude Code credential lives in your login Keychain and belongs to
     Claude Code; the app reads and refreshes it but keeps no separate copy.</li>
+    <li>The ChatGPT/Codex credential lives in <code>~/.codex/auth.json</code> and
+    belongs to those tools; the app only reads it and keeps no copy.</li>
     <li><strong>App preferences</strong> (macOS user defaults): non-personal
     settings only, such as whether the tip-jar item is hidden.</li>
-    <li>Your usage numbers are fetched live from Anthropic and shown in the menu;
-    the app keeps no database of them.</li>
+    <li>Your usage numbers are fetched live from each provider and shown in the
+    menu; the app keeps no database of them.</li>
   </ul>
 
   <h2>Third parties</h2>
   <ul>
-    <li><strong>Anthropic.</strong> Usage data is processed by Anthropic under
-    <a href="https://www.anthropic.com/legal/privacy">Anthropic's Privacy Policy</a>.
-    This app is not affiliated with Anthropic.</li>
+    <li><strong>Anthropic.</strong> Claude usage data is processed by Anthropic under
+    <a href="https://www.anthropic.com/legal/privacy">Anthropic's Privacy Policy</a>.</li>
+    <li><strong>OpenAI.</strong> ChatGPT usage data is processed by OpenAI under
+    <a href="https://openai.com/policies/privacy-policy">OpenAI's Privacy Policy</a>.</li>
+    <li>This app is independent and is <strong>not affiliated with, endorsed by, or
+    sponsored by Anthropic or OpenAI</strong>.</li>
     <li><strong>Optional links.</strong> If you click a tip-jar link or open the
     project on GitHub, your browser opens that site, each with its own privacy
     policy. The app shares no data with them.</li>
@@ -87,12 +107,12 @@
 
   <h2>Contact</h2>
   <p>Questions or concerns: open an issue at
-  <a href="https://github.com/stavrop/usage-monitor-for-claude/issues">github.com/stavrop/usage-monitor-for-claude/issues</a>.</p>
+  <a href="https://github.com/stavrop/ai-usage-monitor/issues">github.com/stavrop/ai-usage-monitor/issues</a>.</p>
 
   <footer>
-    <a href="./">Usage Monitor for Claude</a> &middot;
+    <a href="./">AI Usage Monitor</a> &middot;
     <a href="terms.html">Terms of Service</a> &middot;
-    <a href="https://github.com/stavrop/usage-monitor-for-claude">GitHub</a>
+    <a href="https://github.com/stavrop/ai-usage-monitor">GitHub</a>
   </footer>
 </div>
 </body>

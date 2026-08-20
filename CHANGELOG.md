@@ -6,13 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-20
+
+### Added
+- **ChatGPT usage.** The app now also reports OpenAI rate-limit windows, read
+  from the credential the ChatGPT desktop app / Codex CLI already store at
+  `~/.codex/auth.json`. Windows are labelled by length (*Monthly*, *5-hour*, …),
+  and code-review limits and credit balances appear when the account has them.
+- Providers are **auto-detected**: whichever of Claude Code and ChatGPT/Codex is
+  signed in on the Mac gets a section. A provider that isn't signed in is hidden
+  rather than shown as an error.
+
+### Changed
+- **Renamed to AI Usage Monitor** (was "Usage Monitor for Claude"), since it is
+  no longer Claude-specific. The Homebrew cask token is now `ai-usage-monitor`;
+  the tap carries a `cask_renames.json` entry so existing installs migrate on
+  `brew update`. The bundle identifier is deliberately unchanged, so preferences
+  and notification permissions carry over.
+- Menu bar shows both providers as `C 45% · G 7%`. With a single provider it
+  keeps the previous compact form including the reset countdown.
+- The dropdown groups rows under a per-provider header (only when more than one
+  provider is present, so single-provider layout is unchanged).
+- Polling, rate-limit backoff, and error state are now **per provider** — one
+  being signed out, expired, or 429'd no longer affects the other.
+- Threshold notifications are namespaced per provider, so identically-named
+  buckets can't suppress each other.
+
+### Security
+- The ChatGPT credential is treated as **read-only**. The app never writes
+  `~/.codex/auth.json` and never refreshes that token: those tools own it, and a
+  bad write would sign the user out of Codex. An expired token is reported in the
+  menu instead.
+
 ## [0.2.3] - 2026-08-20
 
 ### Changed
 - Maintenance release: the 0.2.2 code republished as a freshly Developer
   ID-signed, notarized and stapled build. **No functional changes** — `main.swift`
   is identical to 0.2.2.
-- `packaging/usage-monitor-for-claude.rb` (the canonical cask template) had been
+- `packaging/ai-usage-monitor.rb` (the canonical cask template) had been
   left at 0.2.1 when the tap cask was bumped to 0.2.2; template and shipped cask
   are back in sync.
 - Fixed the changelog's comparison links, which were missing a `[0.2.2]` entry.
@@ -67,9 +99,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sign + notarize + staple), launch-at-login template, and an original
   CoreGraphics app icon.
 
-[Unreleased]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.3...HEAD
-[0.2.3]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/stavrop/usage-monitor-for-claude/releases/tag/v0.1.0
+[Unreleased]: https://github.com/stavrop/ai-usage-monitor/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.3...v0.3.0
+[0.2.3]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/stavrop/ai-usage-monitor/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/stavrop/ai-usage-monitor/releases/tag/v0.1.0

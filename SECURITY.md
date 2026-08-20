@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report security issues privately using GitHub's
-[**Report a vulnerability**](https://github.com/stavrop/usage-monitor-for-claude/security/advisories/new)
+[**Report a vulnerability**](https://github.com/stavrop/ai-usage-monitor/security/advisories/new)
 (Security → Advisories). Please do **not** open a public issue for a
 vulnerability until it has been addressed.
 

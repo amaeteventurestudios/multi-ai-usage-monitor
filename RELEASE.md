@@ -45,15 +45,15 @@ Gatekeeper warnings and without needing `xattr` tricks.
 ## 3. Bump the Homebrew tap
 
 The tap already exists at [`stavrop/homebrew-tap`](https://github.com/stavrop/homebrew-tap)
-(cask: `Casks/usage-monitor-for-claude.rb`). On each release, point it at the new
+(cask: `Casks/ai-usage-monitor.rb`). On each release, point it at the new
 build:
 
 ```sh
 cd path/to/homebrew-tap
-# edit Casks/usage-monitor-for-claude.rb:
+# edit Casks/ai-usage-monitor.rb:
 #   - version "X.Y.Z"
 #   - sha256 "<the sha256 printed by build_release.sh in §1>"
-git commit -am "usage-monitor-for-claude X.Y.Z" && git push
+git commit -am "ai-usage-monitor X.Y.Z" && git push
 ```
 
 `version` also rewrites the release-asset URL (it interpolates `#{version}`), so
@@ -61,12 +61,12 @@ those two lines are the only edits. Verify before relying on it:
 
 ```sh
 brew update
-brew fetch --cask stavrop/tap/usage-monitor-for-claude   # re-downloads, checks sha256
-brew audit  --cask stavrop/tap/usage-monitor-for-claude   # style/validity
+brew fetch --cask stavrop/tap/ai-usage-monitor   # re-downloads, checks sha256
+brew audit  --cask stavrop/tap/ai-usage-monitor   # style/validity
 ```
 
-Users then get it with `brew upgrade --cask usage-monitor-for-claude`. Keep
-[`packaging/usage-monitor-for-claude.rb`](packaging/usage-monitor-for-claude.rb)
+Users then get it with `brew upgrade --cask ai-usage-monitor`. Keep
+[`packaging/ai-usage-monitor.rb`](packaging/ai-usage-monitor.rb)
 in this repo in sync as the canonical template.
 
 ### Graduating to official homebrew-cask (later)

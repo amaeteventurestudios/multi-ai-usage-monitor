@@ -1,37 +1,58 @@
-# Usage Monitor for Claude
+# AI Usage Monitor
 
-A tiny macOS **menu bar** app that shows your Claude **session** (5-hour) and
-**weekly** (7-day) usage as live percentages with reset times — the same numbers
-`/usage` shows inside Claude Code — without opening a terminal.
+A tiny macOS **menu bar** app that shows your **Claude** and **ChatGPT** usage as
+live percentages with reset times — the same numbers `/usage` shows inside Claude
+Code and `/status` shows inside Codex — without opening a terminal.
+
+```
+C 67% · G 7%
+```
+
+It picks up whichever providers are already signed in on your Mac. With only one,
+the title keeps its original compact form including the reset countdown:
 
 ```
 ⛏ 67% · 4h12m
 ```
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Usage Monitor for Claude menu showing session, weekly, and credits usage" width="300">
+  <img src="docs/screenshot.png" alt="AI Usage Monitor menu showing session, weekly, and credits usage" width="300">
 </p>
 
-Click the menu bar item for a breakdown — session, weekly-all, and per-model
-weekly — where each bucket is a colored gradient bar (green → amber → red as it
-fills) with its reset time. If you have pay-as-you-go credits, a
-**Credits (monthly)** row shows what you've used, what's left, and the monthly
-cap in dollars. It notifies you once per window when a bucket crosses 90%.
+Click the menu bar item for a breakdown, grouped by provider. Each bucket is a
+colored gradient bar (green → amber → red as it fills) with its reset time:
 
-> **Unofficial project — not affiliated with Anthropic.** This is an independent
-> utility, not affiliated with, endorsed by, or sponsored by Anthropic. "Claude",
-> "Claude Code", and "Anthropic" are trademarks of Anthropic PBC, used here only
-> to describe what the software works with. It reads an **undocumented** OAuth
-> usage endpoint and reuses the public Claude Code OAuth client id, so it may
-> break at any time and could conflict with Anthropic's terms of service. Use it
-> **at your own risk**. It authenticates only with the Claude Code login already
-> on your Mac and sends it only to Anthropic — no data goes anywhere else.
+- **Claude** — session (5-hour), weekly-all, and per-model weekly. If you have
+  pay-as-you-go credits, a **Credits (monthly)** row shows what you've used,
+  what's left, and the monthly cap in dollars.
+- **ChatGPT** — the primary and secondary rate-limit windows for your plan
+  (labelled by length, e.g. *Monthly* or *5-hour*), plus code-review limits and a
+  credit balance when your account has them.
+
+It notifies you once per window when any bucket crosses 90%. The two providers are
+polled independently: one being signed out, expired, or rate-limited never affects
+the other.
+
+> **Unofficial project — not affiliated with Anthropic or OpenAI.** This is an
+> independent utility, not affiliated with, endorsed by, or sponsored by either.
+> "Claude", "Claude Code", and "Anthropic" are trademarks of Anthropic PBC;
+> "ChatGPT", "Codex", and "OpenAI" are trademarks of OpenAI — used here only to
+> describe what the software works with. It reads **undocumented** usage endpoints
+> and reuses the public Claude Code OAuth client id, so it may break at any time
+> and could conflict with either provider's terms of service. Use it **at your own
+> risk**. It authenticates only with the logins already on your Mac and sends each
+> token only to its own provider — no data goes anywhere else.
 
 ## Requirements
 
 - macOS 12 (Monterey) or later.
-- **Claude Code** installed and signed in (`claude`) — the app reads the login
-  credential it stores in your Keychain. No API key or extra token needed.
+- At least one of:
+  - **Claude Code** installed and signed in (`claude`) — the app reads the login
+    credential it stores in your Keychain.
+  - **ChatGPT desktop app** or **Codex CLI** signed in — the app reads (never
+    writes) the credential at `~/.codex/auth.json`.
+
+  No API key or extra token is needed for either, and you can have both.
 - Building from source additionally needs the **Xcode Command Line Tools**
   (`xcode-select --install`).
 
@@ -39,7 +60,7 @@ cap in dollars. It notifies you once per window when a bucket crosses 90%.
 
 ### Download a release (recommended)
 
-Pre-built binaries live on the **[Releases page](https://github.com/stavrop/usage-monitor-for-claude/releases/latest)**
+Pre-built binaries live on the **[Releases page](https://github.com/stavrop/ai-usage-monitor/releases/latest)**
 (the "Releases" section of the repo — a separate tab, not a folder in the file
 list). Download `ClaudeUsage.zip` from the latest release, unzip it, and drag
 `ClaudeUsage.app` to `/Applications`.
@@ -51,14 +72,14 @@ open normally — no Gatekeeper override needed.
 
 ```sh
 brew tap stavrop/tap
-brew install --cask usage-monitor-for-claude
+brew install --cask ai-usage-monitor
 ```
 
 ### Build from source
 
 ```sh
-git clone https://github.com/stavrop/usage-monitor-for-claude.git
-cd usage-monitor-for-claude
+git clone https://github.com/stavrop/ai-usage-monitor.git
+cd ai-usage-monitor
 ./build.sh            # compiles ClaudeUsage.app with the Command Line Tools
 open ClaudeUsage.app
 ```
@@ -147,7 +168,7 @@ swift tools/make_icon.swift icon_1024.png
 This app is free and open-source, built in spare time. If it earns a spot in your
 menu bar, two small things help more than you'd think:
 
-- ⭐️ **[Star it on GitHub](https://github.com/stavrop/usage-monitor-for-claude)** —
+- ⭐️ **[Star it on GitHub](https://github.com/stavrop/ai-usage-monitor)** —
   stars are how other people find it, and they genuinely make my day.
 - ☕️ **[Buy me a coffee](https://buymeacoffee.com/stavrop)** — a small tip keeps the
   late-night maintenance caffeinated and the updates coming.
@@ -156,8 +177,8 @@ No pressure at all — even telling a friend means a lot. Thank you! 🙏
 
 ## Privacy, terms & security
 
-This app has no servers and collects nothing — it reads the Claude Code login
-already on your Mac and talks only to Anthropic. See [PRIVACY.md](PRIVACY.md),
+This app has no servers and collects nothing — it reads the Claude Code and
+ChatGPT/Codex logins already on your Mac and talks only to Anthropic and OpenAI. See [PRIVACY.md](PRIVACY.md),
 [TERMS.md](TERMS.md), and [SECURITY.md](SECURITY.md). Contributions welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 

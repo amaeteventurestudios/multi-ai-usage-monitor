@@ -3,14 +3,22 @@ import Foundation
 
 // MARK: - Config
 
+// Claude (Anthropic) — OAuth credentials live in the login Keychain, written by
+// Claude Code. We read AND refresh these (the item is ours to update).
 let KEYCHAIN_SERVICE = "Claude Code-credentials"
 let KEYCHAIN_ACCOUNT = NSUserName()
 let USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 let TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 
-let GITHUB_URL  = "https://github.com/stavrop/usage-monitor-for-claude"
-let PRIVACY_URL = "https://stavrop.github.io/usage-monitor-for-claude/privacy.html"
-let TERMS_URL   = "https://stavrop.github.io/usage-monitor-for-claude/terms.html"
+// ChatGPT (OpenAI) — the Codex CLI and the ChatGPT desktop app share plaintext
+// OAuth tokens at ~/.codex/auth.json, and poll this same endpoint themselves.
+// We only ever READ that file; see readCodexAuth for why.
+let OPENAI_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+let CODEX_AUTH_PATH  = (NSHomeDirectory() as NSString).appendingPathComponent(".codex/auth.json")
+
+let GITHUB_URL  = "https://github.com/stavrop/ai-usage-monitor"
+let PRIVACY_URL = "https://stavrop.github.io/ai-usage-monitor/privacy.html"
+let TERMS_URL   = "https://stavrop.github.io/ai-usage-monitor/terms.html"
 // Public Claude Code OAuth client id.
 let OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 let REFRESH_INTERVAL: TimeInterval = 600   // 10 min; keep polling light to avoid rate limits (usage windows are 5h/7d)
@@ -34,12 +42,47 @@ struct Credit {
     var remainingMinor: Int { max(0, limitMinor - usedMinor) }
 }
 
-struct Usage {
-    let session: Limit?
-    let weeklyAll: Limit?
-    let weeklyScoped: Limit?      // e.g. Sonnet/Opus scoped weekly
-    let scopedName: String?
+/// A service we can report usage for. The app shows a section per provider and
+/// only for providers whose credentials are actually present on this Mac, so a
+/// Claude-only or ChatGPT-only machine sees exactly one section.
+enum ProviderID: String, CaseIterable {
+    case anthropic, openai
+
+    var displayName: String {
+        switch self {
+        case .anthropic: return "Claude"
+        case .openai:    return "ChatGPT"
+        }
+    }
+
+    /// Single-letter prefix for the menu bar, e.g. "C 45% · G 7%".
+    var badge: String {
+        switch self {
+        case .anthropic: return "C"
+        case .openai:    return "G"
+        }
+    }
+}
+
+/// One labelled usage bar in the dropdown.
+struct Bucket {
+    let label: String
+    let limit: Limit
+}
+
+/// Everything we render for a single provider.
+struct ProviderUsage {
+    let provider: ProviderID
+    let buckets: [Bucket]
+    /// The bucket mirrored into the menu bar title — Claude's session and
+    /// ChatGPT's primary window. Deliberately NOT "the highest bucket": the
+    /// title should mean the same thing every time you glance at it.
+    let headline: Limit?
     let credit: Credit?
+    let creditLabel: String
+    /// Free-text extra line (e.g. a ChatGPT credit balance with no known cap,
+    /// which can't be drawn as a percentage bar).
+    let note: String?
 }
 
 // MARK: - Credentials (Keychain)
@@ -229,7 +272,7 @@ func parseRetryAfter(_ value: String?) -> TimeInterval? {
     return nil
 }
 
-func fetchUsage(token: String, completion: @escaping (Result<Usage, Error>) -> Void) {
+func fetchAnthropicUsage(token: String, completion: @escaping (Result<ProviderUsage, Error>) -> Void) {
     var req = URLRequest(url: URL(string: USAGE_URL)!)
     req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
@@ -279,10 +322,148 @@ func fetchUsage(token: String, completion: @escaping (Result<Usage, Error>) -> V
             completion(.failure(NSError(domain: "parse", code: -2,
                 userInfo: [NSLocalizedDescriptionKey: "empty usage response"]))); return
         }
-        let credit = parseCredit(obj)
-        completion(.success(Usage(session: session, weeklyAll: weeklyAll,
-                                  weeklyScoped: weeklyScoped, scopedName: scopedName,
-                                  credit: credit)))
+        var buckets: [Bucket] = []
+        if let s = session { buckets.append(Bucket(label: "Session", limit: s)) }
+        if let w = weeklyAll { buckets.append(Bucket(label: "Weekly (all)", limit: w)) }
+        if let ws = weeklyScoped {
+            buckets.append(Bucket(label: "Weekly (\(scopedName ?? "scoped"))", limit: ws))
+        }
+        completion(.success(ProviderUsage(provider: .anthropic,
+                                          buckets: buckets,
+                                          headline: session ?? weeklyAll,
+                                          credit: parseCredit(obj),
+                                          creditLabel: "Credits (monthly)",
+                                          note: nil)))
+    }.resume()
+}
+
+// MARK: - ChatGPT (Codex) credentials
+
+/// Codex keeps its OAuth tokens as plaintext JSON at ~/.codex/auth.json — the
+/// same file the ChatGPT desktop app and the `codex` CLI use.
+///
+/// We only ever READ it. Those tools own the refresh cycle, and a botched write
+/// here would sign the user out of Codex entirely, so when the token has expired
+/// we say so rather than trying to renew it. Opening ChatGPT or running `codex`
+/// refreshes the file and we pick it up on the next poll.
+struct CodexAuth {
+    let accessToken: String
+    let accountId: String?
+    let expiresAt: Date?
+
+    var isExpired: Bool {
+        guard let e = expiresAt else { return false }   // unknown expiry: try anyway
+        return Date() >= e.addingTimeInterval(-60)      // 60s slack
+    }
+}
+
+/// Read the `exp` claim out of a JWT *without* verifying the signature. We only
+/// need to know whether a call is worth making; the server is the real authority.
+func jwtExpiry(_ token: String) -> Date? {
+    let parts = token.split(separator: ".")
+    guard parts.count >= 2 else { return nil }
+    var b64 = String(parts[1])
+        .replacingOccurrences(of: "-", with: "+")
+        .replacingOccurrences(of: "_", with: "/")
+    while b64.count % 4 != 0 { b64 += "=" }
+    guard let data = Data(base64Encoded: b64),
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let exp = (obj["exp"] as? NSNumber)?.doubleValue else { return nil }
+    return Date(timeIntervalSince1970: exp)
+}
+
+/// nil when Codex/ChatGPT isn't signed in on this Mac — in which case we simply
+/// don't show a ChatGPT section at all.
+func readCodexAuth() -> CodexAuth? {
+    guard let data = FileManager.default.contents(atPath: CODEX_AUTH_PATH),
+          let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let tokens = obj["tokens"] as? [String: Any],
+          let access = tokens["access_token"] as? String, !access.isEmpty else { return nil }
+    return CodexAuth(accessToken: access,
+                     accountId: tokens["account_id"] as? String,
+                     expiresAt: jwtExpiry(access))
+}
+
+// MARK: - ChatGPT usage fetch
+
+/// Name a rate-limit window from its length, since the API gives us seconds
+/// rather than a label: 18000 → "5-hour", 604800 → "Weekly", 2592000 → "Monthly".
+func windowLabel(_ seconds: Int) -> String {
+    if seconds <= 0 { return "Usage" }
+    if seconds < 3600 { return "\(max(1, seconds / 60))-minute" }
+    if seconds == 86_400 { return "Daily" }
+    if seconds == 604_800 { return "Weekly" }
+    if seconds >= 2_592_000 && seconds <= 2_678_400 { return "Monthly" }
+    if seconds < 86_400 { return "\(seconds / 3600)-hour" }
+    return "\(seconds / 86_400)-day"
+}
+
+func parseOpenAIWindow(_ d: [String: Any]?, fallbackLabel: String? = nil) -> Bucket? {
+    guard let d = d,
+          let pct = (d["used_percent"] as? NSNumber)?.doubleValue else { return nil }
+    var reset: Date?
+    if let at = (d["reset_at"] as? NSNumber)?.doubleValue, at > 0 {
+        reset = Date(timeIntervalSince1970: at)
+    } else if let after = (d["reset_after_seconds"] as? NSNumber)?.doubleValue {
+        reset = Date().addingTimeInterval(after)
+    }
+    let secs = (d["limit_window_seconds"] as? NSNumber)?.intValue ?? -1
+    return Bucket(label: fallbackLabel ?? windowLabel(secs),
+                  limit: Limit(percent: Int(pct.rounded()), resetsAt: reset))
+}
+
+/// ChatGPT exposes a credit balance but no cap we can derive a percentage from,
+/// so it becomes a plain text line rather than a bar.
+func openAICreditNote(_ obj: [String: Any]) -> String? {
+    guard let c = obj["credits"] as? [String: Any] else { return nil }
+    if (c["unlimited"] as? Bool) == true { return "Credits: unlimited" }
+    guard (c["has_credits"] as? Bool) == true else { return nil }
+    guard let balance = (c["balance"] as? NSNumber)?.doubleValue else { return nil }
+    let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 2
+    let amount = f.string(from: NSNumber(value: balance)) ?? "\(balance)"
+    return "Credits: \(amount) remaining"
+}
+
+func fetchOpenAIUsage(_ auth: CodexAuth,
+                      completion: @escaping (Result<ProviderUsage, Error>) -> Void) {
+    var req = URLRequest(url: URL(string: OPENAI_USAGE_URL)!)
+    req.setValue("Bearer \(auth.accessToken)", forHTTPHeaderField: "Authorization")
+    if let acct = auth.accountId, !acct.isEmpty {
+        req.setValue(acct, forHTTPHeaderField: "ChatGPT-Account-Id")
+    }
+    URLSession.shared.dataTask(with: req) { data, resp, err in
+        if let err = err { completion(.failure(err)); return }
+        guard let http = resp as? HTTPURLResponse else {
+            completion(.failure(CredError.badFormat)); return
+        }
+        if http.statusCode == 401 {
+            completion(.failure(HTTPError(status: 401, retryAfter: nil))); return
+        }
+        guard (200...299).contains(http.statusCode) else {
+            let ra = parseRetryAfter(http.value(forHTTPHeaderField: "Retry-After"))
+            completion(.failure(HTTPError(status: http.statusCode, retryAfter: ra))); return
+        }
+        guard let data = data,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            completion(.failure(CredError.badFormat)); return
+        }
+        let rl = obj["rate_limit"] as? [String: Any]
+        var buckets: [Bucket] = []
+        if let b = parseOpenAIWindow(rl?["primary_window"] as? [String: Any]) { buckets.append(b) }
+        if let b = parseOpenAIWindow(rl?["secondary_window"] as? [String: Any]) { buckets.append(b) }
+        if let b = parseOpenAIWindow(obj["code_review_rate_limit"] as? [String: Any],
+                                     fallbackLabel: "Code review") { buckets.append(b) }
+        // A 200 with no window at all isn't a usable update — don't render 0%.
+        guard !buckets.isEmpty else {
+            completion(.failure(NSError(domain: "parse", code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "empty usage response"]))); return
+        }
+        completion(.success(ProviderUsage(provider: .openai,
+                                          buckets: buckets,
+                                          headline: buckets.first?.limit,
+                                          credit: nil,
+                                          creditLabel: "Credits",
+                                          note: openAICreditNote(obj))))
     }.resume()
 }
 
@@ -387,7 +568,7 @@ final class TipJarController: NSObject {
         stack.edgeInsets = NSEdgeInsets(top: 24, left: 28, bottom: 20, right: 28)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "Enjoying Usage Monitor for Claude?")
+        let title = NSTextField(labelWithString: "Enjoying AI Usage Monitor?")
         title.font = .boldSystemFont(ofSize: 16)
         stack.addArrangedSubview(title)
 
@@ -547,36 +728,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var timer: Timer?
     var tickTimer: Timer?
-    var lastUsage: Usage?
+    // Per-provider state. A provider only appears in these maps once it has
+    // credentials on this Mac, so an unconfigured provider is silently absent
+    // rather than shown as an error.
+    var usageByProvider: [ProviderID: ProviderUsage] = [:]
+    var errorByProvider: [ProviderID: String] = [:]
     var lastUpdated: Date?
-    var lastError: String?
-    // Rate-limit backoff: consecutive transient failures (429/5xx) and the pending
-    // one-off retry. Both are only ever touched on the main queue.
-    var backoffAttempt = 0
-    var retryWork: DispatchWorkItem?
+    // Rate-limit backoff, tracked per provider: the two services rate-limit
+    // independently, so a 429 from one must not slow polling of the other.
+    var backoffAttempt: [ProviderID: Int] = [:]
+    var retryWork: [ProviderID: DispatchWorkItem] = [:]
     // Tracks the reset time we last alerted for, per bucket, so we fire once
     // per window and re-arm automatically after each reset.
     var alertedFor: [String: Date] = [:]
 
-    func maybeAlert(_ name: String, _ limit: Limit?) {
+    func maybeAlert(_ provider: ProviderID, _ name: String, _ limit: Limit?) {
         guard let l = limit else { return }
+        // Key by provider too, so Claude's and ChatGPT's identically-named
+        // buckets can't suppress each other's notifications.
+        let key = "\(provider.rawValue).\(name)"
         if l.percent < ALERT_THRESHOLD {
             // Below threshold: clear so a later crossing (e.g. unknown reset) re-fires.
-            if l.resetsAt == nil { alertedFor[name] = nil }
+            if l.resetsAt == nil { alertedFor[key] = nil }
             return
         }
         let windowKey = l.resetsAt ?? Date.distantFuture
-        if alertedFor[name] == windowKey { return } // already alerted this window
-        alertedFor[name] = windowKey
+        if alertedFor[key] == windowKey { return } // already alerted this window
+        alertedFor[key] = windowKey
         postNotification(
-            title: "Claude \(name) usage at \(l.percent)%",
+            title: "\(provider.displayName) \(name) usage at \(l.percent)%",
             body: "Resets \(fmtReset(l.resetsAt))"
         )
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "Claude …"
+        statusItem.button?.title = "AI Usage …"
         let menu = NSMenu()
         menu.autoenablesItems = false
         statusItem.menu = menu
@@ -596,120 +783,188 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { self.statusItem.button?.title = s }
     }
 
-    /// Render the menu bar title from the last known usage. Cheap and local — the
-    /// countdown ticks down between API polls without any network calls.
+    /// Render the menu bar title from the last known usage. Cheap and local — no
+    /// network. With two providers this is "C 45% · G 7%"; with only one it keeps
+    /// the original richer form including the reset countdown.
     func renderTitle() {
-        guard let usage = lastUsage else { return }
-        let s = usage.session?.percent ?? 0
-        let reset = compactReset(usage.session?.resetsAt)
-        setTitle("⛏ \(s)% · \(reset)")
-    }
-
-    /// Record a transient failure WITHOUT discarding the last good values: keep
-    /// showing the previous percentages and note the error in the dropdown. Only
-    /// fall back to a warning glyph if we've never had a successful reading.
-    func softError(_ message: String) {
-        lastError = message
-        if lastUsage == nil { setTitle("Claude ⚠️") }
-        rebuildMenu()
-    }
-
-    /// Clear the rate-limit backoff after a successful fetch: reset the attempt
-    /// counter and cancel any pending retry so we return to the normal cadence.
-    func clearBackoff() {
-        DispatchQueue.main.async {
-            self.backoffAttempt = 0
-            self.retryWork?.cancel()
-            self.retryWork = nil
+        let shown = ProviderID.allCases.compactMap { id -> (ProviderID, Limit)? in
+            guard let u = usageByProvider[id], let h = u.headline else { return nil }
+            return (id, h)
+        }
+        guard !shown.isEmpty else { return }
+        if shown.count == 1 {
+            let (_, h) = shown[0]
+            setTitle("⛏ \(h.percent)% · \(compactReset(h.resetsAt))")
+        } else {
+            setTitle(shown.map { "\($0.0.badge) \($0.1.percent)%" }.joined(separator: " · "))
         }
     }
 
-    /// Schedule a single retry after a 429/5xx. When the server sends Retry-After
-    /// we wait AT LEAST that long (+ small jitter) — never less, or we'd hammer the
-    /// window and keep it armed. Without it, exponential backoff (30s, 60s, 120s, …
-    /// capped at 30m) with jitter to decorrelate from other clients on the same
-    /// account. An absolute 2h ceiling guards against an absurd server value. The
-    /// steady poll timer keeps running underneath, so this only ever fetches sooner
-    /// than the next scheduled poll — never piles extra load on a rate limit.
-    func scheduleBackoffRetry(retryAfter: TimeInterval?, label: String) {
+    /// Record a transient failure for ONE provider WITHOUT discarding its last
+    /// good values, and without touching the other provider's numbers.
+    func softError(_ provider: ProviderID, _ message: String) {
         DispatchQueue.main.async {
-            self.backoffAttempt += 1
+            self.errorByProvider[provider] = message
+            if self.usageByProvider.isEmpty { self.setTitle("AI Usage ⚠️") }
+            self.rebuildMenu()
+        }
+    }
+
+    /// A provider with no credentials at all is simply "not configured" — hide it
+    /// rather than showing a permanent error beside a working provider. But if it
+    /// HAD been working, surface the loss instead of quietly dropping numbers.
+    func noteMissing(_ provider: ProviderID, _ message: String) {
+        DispatchQueue.main.async {
+            if self.usageByProvider[provider] != nil {
+                self.softError(provider, message)
+            } else if self.errorByProvider[provider] != nil {
+                self.errorByProvider[provider] = nil
+                self.rebuildMenu()
+            }
+        }
+    }
+
+    /// Clear a provider's rate-limit backoff after a successful fetch.
+    func clearBackoff(_ provider: ProviderID) {
+        DispatchQueue.main.async {
+            self.backoffAttempt[provider] = 0
+            self.retryWork[provider]?.cancel()
+            self.retryWork[provider] = nil
+        }
+    }
+
+    /// Schedule a single retry for one provider after a 429/5xx. When the server
+    /// sends Retry-After we wait AT LEAST that long (+ jitter) — never less, or
+    /// we'd hammer the window and keep it armed. Without it, exponential backoff
+    /// (30s, 60s, 120s, … capped at 30m) with jitter. An absolute 2h ceiling
+    /// guards against an absurd server value. The steady poll timer keeps running
+    /// underneath, so this only ever fetches sooner than the next scheduled poll.
+    func scheduleBackoffRetry(_ provider: ProviderID, retryAfter: TimeInterval?, label: String) {
+        DispatchQueue.main.async {
+            let attempt = (self.backoffAttempt[provider] ?? 0) + 1
+            self.backoffAttempt[provider] = attempt
             let hardCeiling: TimeInterval = 7200   // 2h absolute sanity bound
             let delay: TimeInterval
             if let ra = retryAfter {
-                // Honor the server exactly; add a little jitter on TOP, never below.
                 delay = min(hardCeiling, ra + Double.random(in: 0...15))
             } else {
-                let expo = min(1800, 30 * pow(2.0, Double(self.backoffAttempt - 1)))
+                let expo = min(1800, 30 * pow(2.0, Double(attempt - 1)))
                 delay = expo + Double.random(in: 0...(max(1, expo) * 0.25))
             }
             let secs = Int(delay.rounded())
             let pretty = secs >= 60 ? "\(secs / 60)m\(secs % 60)s" : "\(secs)s"
-            self.softError("Rate-limited (\(label)); retrying in \(pretty)")
-            self.retryWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.refresh() }
-            self.retryWork = work
+            self.softError(provider, "Rate-limited (\(label)); retrying in \(pretty)")
+            self.retryWork[provider]?.cancel()
+            let work = DispatchWorkItem { [weak self] in self?.refresh(provider) }
+            self.retryWork[provider] = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         }
     }
 
+    /// Poll every provider. Each is independent: one being signed out, expired or
+    /// rate-limited has no effect on the other.
     func refresh() {
-        let creds: Credentials
-        do { creds = try readCredentials() }
-        catch {
-            softError("No Claude credentials in keychain")
+        for id in ProviderID.allCases { refresh(id) }
+    }
+
+    func refresh(_ provider: ProviderID) {
+        switch provider {
+        case .anthropic: refreshAnthropic()
+        case .openai:    refreshOpenAI()
+        }
+    }
+
+    func refreshAnthropic() {
+        guard let creds = try? readCredentials() else {
+            noteMissing(.anthropic, "No Claude credentials in keychain")
             return
         }
         if creds.isExpired {
             refreshToken(creds) { [weak self] updated in
+                guard let self = self else { return }
                 if let updated = updated {
-                    self?.loadUsage(token: updated.accessToken)
+                    self.loadAnthropic(token: updated.accessToken)
                 } else {
-                    self?.softError("Token expired — open Claude Code to refresh")
+                    self.softError(.anthropic, "Token expired — open Claude Code to refresh")
                 }
             }
         } else {
-            loadUsage(token: creds.accessToken)
+            loadAnthropic(token: creds.accessToken)
         }
     }
 
-    func loadUsage(token: String) {
-        fetchUsage(token: token) { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success(let usage):
-                self.clearBackoff()
-                self.lastUsage = usage
+    func refreshOpenAI() {
+        guard let auth = readCodexAuth() else {
+            noteMissing(.openai, "Not signed in to ChatGPT or Codex")
+            return
+        }
+        // We never write auth.json, so an expired token is reported, not renewed —
+        // opening ChatGPT or running `codex` refreshes it and we pick it up next poll.
+        guard !auth.isExpired else {
+            softError(.openai, "ChatGPT token expired — open ChatGPT to refresh")
+            return
+        }
+        loadOpenAI(auth)
+    }
+
+    /// Shared result handling. `onAuthFailure` runs for a 401, which each provider
+    /// answers differently: Claude can re-mint a token, ChatGPT cannot.
+    func handle(_ provider: ProviderID,
+                _ result: Result<ProviderUsage, Error>,
+                onAuthFailure: @escaping () -> Void) {
+        switch result {
+        case .success(let usage):
+            clearBackoff(provider)
+            DispatchQueue.main.async {
+                self.usageByProvider[provider] = usage
+                self.errorByProvider[provider] = nil
                 self.lastUpdated = Date()
-                self.lastError = nil
-                // Menu bar: session % + time until the session resets.
-                // Weekly stays in the dropdown only.
                 self.renderTitle()
-                self.maybeAlert("session", usage.session)
-                self.maybeAlert("weekly", usage.weeklyAll)
-            case .failure(let err):
-                if let http = err as? HTTPError {
-                    if http.status == 401 {
-                        // Try a refresh once on hard auth failure.
-                        if let creds = try? readCredentials() {
-                            refreshToken(creds) { updated in
-                                if let updated = updated { self.loadUsage(token: updated.accessToken) }
-                                else { self.softError("Auth failed (401)") }
-                            }
-                            return
-                        }
-                    }
-                    // Rate-limited (429) or a transient server error (5xx): keep the
-                    // last-good numbers on screen and schedule a backoff retry that
-                    // honors Retry-After, instead of waiting the full poll interval.
-                    if http.status == 429 || (500...599).contains(http.status) {
-                        self.scheduleBackoffRetry(retryAfter: http.retryAfter, label: "HTTP \(http.status)")
-                        return
+                for b in usage.buckets { self.maybeAlert(provider, b.label, b.limit) }
+                self.rebuildMenu()
+            }
+        case .failure(let err):
+            if let http = err as? HTTPError {
+                if http.status == 401 { onAuthFailure(); return }
+                // Rate-limited or a transient server error: keep the last-good
+                // numbers on screen and retry on the server's schedule.
+                if http.status == 429 || (500...599).contains(http.status) {
+                    scheduleBackoffRetry(provider, retryAfter: http.retryAfter,
+                                         label: "HTTP \(http.status)")
+                    return
+                }
+            }
+            softError(provider, "Last refresh failed: \((err as NSError).localizedDescription)")
+        }
+    }
+
+    /// `allowRefresh` is false on the retry after a token refresh, so a token that
+    /// is somehow still rejected fails once instead of looping.
+    func loadAnthropic(token: String, allowRefresh: Bool = true) {
+        fetchAnthropicUsage(token: token) { [weak self] result in
+            guard let self = self else { return }
+            self.handle(.anthropic, result) {
+                guard allowRefresh, let creds = try? readCredentials() else {
+                    self.softError(.anthropic, "Auth failed (401)")
+                    return
+                }
+                refreshToken(creds) { updated in
+                    if let updated = updated {
+                        self.loadAnthropic(token: updated.accessToken, allowRefresh: false)
+                    } else {
+                        self.softError(.anthropic, "Auth failed (401)")
                     }
                 }
-                self.softError("Last refresh failed: \((err as NSError).localizedDescription)")
             }
-            self.rebuildMenu()
+        }
+    }
+
+    func loadOpenAI(_ auth: CodexAuth) {
+        fetchOpenAIUsage(auth) { [weak self] result in
+            guard let self = self else { return }
+            self.handle(.openai, result) {
+                self.softError(.openai, "ChatGPT auth failed — open ChatGPT to refresh")
+            }
         }
     }
 
@@ -732,32 +987,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 menu.addItem(item)
             }
 
-            if let err = self.lastError {
-                header("⚠️ \(err)")
-                menu.addItem(.separator())
+            // One section per provider that has something to say. Providers with
+            // no credentials on this Mac contribute nothing at all.
+            let sections = ProviderID.allCases.filter {
+                self.usageByProvider[$0] != nil || self.errorByProvider[$0] != nil
             }
+            // With a single provider the header would just be noise, so the
+            // layout stays exactly as it was before ChatGPT support existed.
+            let showHeaders = sections.count > 1
 
-            if let u = self.lastUsage {
-                if let s = u.session {
-                    bucket("Session", s)
+            for id in sections {
+                if showHeaders { header(id.displayName) }
+
+                if let err = self.errorByProvider[id] {
+                    header("⚠️ \(err)")
                 }
-                menu.addItem(.separator())
-                if let w = u.weeklyAll {
-                    bucket("Weekly (all)", w)
-                }
-                if let ws = u.weeklyScoped {
-                    bucket("Weekly (\(u.scopedName ?? "scoped"))", ws)
-                }
-                if let c = u.credit {
-                    menu.addItem(.separator())
-                    let used = fmtMoney(c.usedMinor, currency: c.currency, exponent: c.exponent)
-                    let left = fmtMoney(c.remainingMinor, currency: c.currency, exponent: c.exponent)
-                    let cap = fmtMoney(c.limitMinor, currency: c.currency, exponent: c.exponent)
-                    let item = NSMenuItem()
-                    item.isEnabled = false
-                    item.view = UsageRowView(label: "Credits (monthly)", percent: c.percent,
-                                             resetText: "\(used) used · \(left) left of \(cap)")
-                    menu.addItem(item)
+
+                if let u = self.usageByProvider[id] {
+                    for b in u.buckets {
+                        bucket(b.label, b.limit)
+                    }
+                    if let c = u.credit {
+                        let used = fmtMoney(c.usedMinor, currency: c.currency, exponent: c.exponent)
+                        let left = fmtMoney(c.remainingMinor, currency: c.currency, exponent: c.exponent)
+                        let cap = fmtMoney(c.limitMinor, currency: c.currency, exponent: c.exponent)
+                        let item = NSMenuItem()
+                        item.isEnabled = false
+                        item.view = UsageRowView(label: u.creditLabel, percent: c.percent,
+                                                 resetText: "\(used) used · \(left) left of \(cap)")
+                        menu.addItem(item)
+                    }
+                    if let note = u.note {
+                        header(note)
+                    }
                 }
                 menu.addItem(.separator())
             }
