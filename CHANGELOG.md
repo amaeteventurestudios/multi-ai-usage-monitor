@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-20
+
+### Changed
+- Maintenance release: the 0.2.2 code republished as a freshly Developer
+  ID-signed, notarized and stapled build. **No functional changes** — `main.swift`
+  is identical to 0.2.2.
+- `packaging/usage-monitor-for-claude.rb` (the canonical cask template) had been
+  left at 0.2.1 when the tap cask was bumped to 0.2.2; template and shipped cask
+  are back in sync.
+- Fixed the changelog's comparison links, which were missing a `[0.2.2]` entry.
+
 ## [0.2.2] - 2026-07-29
 
 ### Added
@@ -56,7 +67,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sign + notarize + staple), launch-at-login template, and an original
   CoreGraphics app icon.
 
-[Unreleased]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/stavrop/usage-monitor-for-claude/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/stavrop/usage-monitor-for-claude/releases/tag/v0.1.0
