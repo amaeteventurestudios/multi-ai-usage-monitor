@@ -14,8 +14,8 @@
 # notability threshold — roughly 75 stars (or comparable forks/watchers). See
 # https://docs.brew.sh/Acceptable-Casks#rejected-casks
 cask "usage-monitor-for-claude" do
-  version "0.2.1"
-  sha256 "ddae8936a38240d0760454997c70761cea40525f12eed49873ba65f359425f05"
+  version "0.2.2"
+  sha256 "404a46a7e1fd4a998d138473363c74ccaeeb5f65b6368f4a3bcd84258210f6dd"
 
   url "https://github.com/stavrop/usage-monitor-for-claude/releases/download/v#{version}/ClaudeUsage.zip"
   name "Usage Monitor for Claude"
