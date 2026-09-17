@@ -125,10 +125,12 @@ enum HTTP {
                                         ? "Open Claude Code and sign in again, then Refresh."
                                         : "Open ChatGPT or run `codex` to sign in again, then Refresh.")
             case 429:
-                return AccountError(kind: .rateLimited, message: "Rate-limited by the provider.")
+                return AccountError(kind: .rateLimited, message: "Rate-limited by the provider.",
+                                    retryAfter: http.retryAfter)
             case 500...599:
                 return AccountError(kind: .providerUnavailable,
-                                    message: "Provider unavailable (HTTP \(http.status)).")
+                                    message: "Provider unavailable (HTTP \(http.status)).",
+                                    retryAfter: http.retryAfter)
             default:
                 return AccountError(kind: .network, message: "Request failed (HTTP \(http.status)).")
             }

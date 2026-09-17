@@ -22,43 +22,131 @@ final class OpenAIUsageProvider: UsageProvider {
         CodexCredentialStore.status(of: account.credentialSource)
     }
 
-    func suggestedDisplayName(for source: CredentialSource) -> String? {
-        let hint = CodexCredentialStore.identityHint(source: source)
-        if let plan = hint.plan, !plan.isEmpty {
-            return "OpenAI (\(OpenAIUsageParser.planDisplayName(plan)))"
+    func credentialMethods() -> [CredentialMethod] {
+        [
+            CredentialMethod(
+                title: "Use the account ChatGPT or Codex is signed in to",
+                detail: "Sign in to the OpenAI account you want to add with the ChatGPT app or "
+                      + "`codex login`, then continue. This app copies that credential into its "
+                      + "own Keychain entry, so signing a different account in afterwards does "
+                      + "not disturb this one.",
+                source: .codexDefault,
+                isPrimary: true),
+            CredentialMethod(
+                title: "Read a credential file instead",
+                detail: "Point at another auth.json — useful when you keep a second account's "
+                      + "credential somewhere of your own. The file is only ever read, never "
+                      + "written.",
+                source: .file(path: ""),
+                requiresFileChoice: true),
+        ]
+    }
+
+    /// Identity comes from the credential's own id token, which carries the
+    /// e-mail and plan, and is then confirmed against the usage endpoint — that
+    /// response names the account and gives a stable account id to deduplicate
+    /// on. Local claims alone are enough to proceed if the network is down.
+    func discoverIdentity(source: CredentialSource,
+                          completion: @escaping (Result<AccountIdentity, AccountError>) -> Void) {
+        guard let auth = CodexCredentialStore.read(source: source) else {
+            let path = CodexCredentialStore.path(for: source)
+                .map { ($0 as NSString).abbreviatingWithTildeInPath }
+            completion(.failure(AccountError(
+                kind: .missingCredential,
+                message: path.map { "No usable credential at \($0)." }
+                    ?? "No usable OpenAI credential found there.",
+                recovery: "Sign in with the ChatGPT app or run `codex login`, then try again.")))
+            return
         }
-        return nil
+        guard !auth.isExpired else {
+            completion(.failure(AccountError(
+                kind: .expiredCredential,
+                message: "That credential has expired.",
+                recovery: "Open ChatGPT or run `codex login` to refresh it, then try again.")))
+            return
+        }
+
+        let local = OpenAIIdentityParser.fromCredential(auth)
+        var headers = ["Authorization": "Bearer \(auth.accessToken)"]
+        if let acct = auth.accountId, !acct.isEmpty {
+            headers["ChatGPT-Account-Id"] = acct
+        }
+        HTTP.getJSON(url: OpenAIUsageProvider.usageURL, headers: headers) { result in
+            switch result {
+            case .success(let obj):
+                completion(.success(OpenAIIdentityParser.fromUsage(obj, fallback: local)))
+            case .failure(let error):
+                let classified = HTTP.classify(error, provider: .openAI)
+                if classified.kind == .authenticationFailed {
+                    completion(.failure(classified))
+                } else {
+                    // The credential parsed and named itself; a flaky network is
+                    // no reason to block onboarding.
+                    completion(.success(local))
+                }
+            }
+        }
+    }
+
+    func captureCredential(from source: CredentialSource,
+                           forAccountID id: UUID) -> Result<CredentialSource, AccountError> {
+        guard CodexCredentialStore.read(source: source) != nil else {
+            return .failure(AccountError(kind: .missingCredential,
+                                         message: "No usable OpenAI credential found there."))
+        }
+        guard CodexCredentialStore.capture(from: source, forAccountID: id) else {
+            return .failure(AccountError(kind: .unreadableCredential,
+                                         message: "Could not save the credential to the Keychain."))
+        }
+        return .success(.appKeychain(id: id.uuidString))
+    }
+
+    /// OpenAI access tokens are short-lived and this app deliberately does not
+    /// renew them — renewing would rotate the token the ChatGPT app and Codex
+    /// depend on, and signing the user out of those is not a trade worth making.
+    ///
+    /// So instead: when a captured credential has expired, look at whatever
+    /// Codex holds now. If it is a live credential for *the same account id*,
+    /// adopt it silently. Signing back in to that account anywhere on this Mac
+    /// quietly revives the saved account, with no reconnect step at all. This is
+    /// purely local — no network, no token exchange.
+    func silentReconnect(for account: AIAccount,
+                         completion: @escaping (CredentialSource?) -> Void) {
+        guard account.hasCapturedCredential,
+              let knownID = account.identity?.providerAccountID,
+              let live = CodexCredentialStore.read(source: .codexDefault),
+              !live.isExpired,
+              let liveID = live.accountId,
+              liveID.caseInsensitiveCompare(knownID) == .orderedSame,
+              CodexCredentialStore.capture(from: .codexDefault, forAccountID: account.id) else {
+            completion(nil); return
+        }
+        Diagnostics.shared.info("adopted a fresh Codex credential for a matching saved account")
+        completion(.appKeychain(id: account.id.uuidString))
     }
 
     func fetchUsage(for account: AIAccount,
                     completion: @escaping (Result<AccountUsage, Error>) -> Void) {
         let source = account.credentialSource
-        guard let path = CodexCredentialStore.path(for: source) else {
-            completion(.failure(AccountError(kind: .invalidPath,
-                                             message: "This account has no OpenAI credential file configured.",
-                                             recovery: "Choose a credential source in Settings.")))
-            return
-        }
-        guard FileManager.default.fileExists(atPath: path) else {
+        // Works for every source: a file another tool owns, or a copy this app
+        // captured into its own Keychain entry.
+        guard let auth = CodexCredentialStore.read(source: source) else {
+            let where_ = CodexCredentialStore.path(for: source)
+                .map { " at \(($0 as NSString).abbreviatingWithTildeInPath)" } ?? ""
             completion(.failure(AccountError(
                 kind: .missingCredential,
-                message: "No credential file at \((path as NSString).abbreviatingWithTildeInPath).",
-                recovery: "Sign in with the ChatGPT app or `codex`, or point this account at another auth.json.")))
-            return
-        }
-        guard let auth = CodexCredentialStore.read(source: source) else {
-            completion(.failure(AccountError(kind: .parsing,
-                                             message: "The credential file has no readable access token.",
-                                             recovery: "Sign in again with the ChatGPT app or `codex`.")))
+                message: "No usable OpenAI credential\(where_).",
+                recovery: "Use Reconnect to sign this account in again.")))
             return
         }
         // We never write auth.json, so an expired token is reported rather than
-        // renewed — the tools that own the file refresh it, and the next poll
-        // picks it up.
+        // renewed — the tools that own the file refresh it, and the coordinator
+        // adopts a matching fresh credential automatically when one appears.
         guard !auth.isExpired else {
             completion(.failure(AccountError(kind: .expiredCredential,
                                              message: "Authentication expired.",
-                                             recovery: "Open ChatGPT or run `codex` to sign in again, then Refresh.")))
+                                             recovery: "Open ChatGPT or run `codex login` for this "
+                                                     + "account, or use Reconnect.")))
             return
         }
 
@@ -80,20 +168,8 @@ final class OpenAIUsageProvider: UsageProvider {
 
 enum OpenAIUsageParser {
 
-    /// Plan identifiers are internal strings ("self_serve_business_prolite").
-    /// Turn them into something readable without pretending to know plans we
-    /// have not seen — unknown values are title-cased, not renamed.
     static func planDisplayName(_ raw: String) -> String {
-        let known: [String: String] = [
-            "plus": "Plus",
-            "pro": "Pro",
-            "free": "Free",
-            "team": "Team",
-            "enterprise": "Enterprise",
-            "business": "Business",
-        ]
-        if let k = known[raw.lowercased()] { return k }
-        return raw.split(separator: "_")
+        OpenAIIdentityParser.planLabel(raw) ?? raw.split(separator: "_")
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
     }
@@ -222,5 +298,64 @@ enum OpenAIUsageParser {
         }.sorted()
         guard !unavailable.isEmpty else { return nil }
         return "Unavailable now: \(unavailable.joined(separator: ", "))"
+    }
+}
+
+/// Turns OpenAI credential claims and usage responses into an account identity.
+enum OpenAIIdentityParser {
+
+    /// From the credential alone — works offline, and is what names the account
+    /// if the network is unavailable during onboarding.
+    static func fromCredential(_ auth: CodexAuth, now: Date = Date()) -> AccountIdentity {
+        AccountIdentity(email: auth.email,
+                        providerAccountID: auth.accountId,
+                        planRaw: auth.planRaw,
+                        planLabel: auth.planRaw.flatMap(planLabel),
+                        verified: auth.email != nil || auth.accountId != nil,
+                        detectedAt: now)
+    }
+
+    /// From the usage response, which is the provider speaking directly.
+    /// Anything it omits falls back to what the credential said.
+    static func fromUsage(_ obj: [String: Any],
+                          fallback: AccountIdentity,
+                          now: Date = Date()) -> AccountIdentity {
+        let email = (obj["email"] as? String) ?? fallback.email
+        let accountID = (obj["account_id"] as? String) ?? fallback.providerAccountID
+        let raw = (obj["plan_type"] as? String) ?? fallback.planRaw
+        return AccountIdentity(email: email,
+                               providerAccountID: accountID,
+                               planRaw: raw,
+                               planLabel: raw.flatMap(planLabel),
+                               verified: email != nil || accountID != nil,
+                               detectedAt: now)
+    }
+
+    /// Friendly plan names, only where the mapping is certain.
+    ///
+    /// Plan identifiers are internal strings like "self_serve_business_prolite".
+    /// The *family* is unambiguous — that is a Business plan — so it maps to
+    /// "Business". The "prolite" tier is not something we can name with
+    /// confidence, so it is not invented: the raw identifier stays in
+    /// diagnostics, and anyone who knows what their plan is called can rename
+    /// the account in one click.
+    static func planLabel(_ raw: String) -> String? {
+        let v = raw.lowercased()
+        guard !v.isEmpty else { return nil }
+        switch v {
+        case "plus", "chatgpt_plus": return "Plus"
+        case "pro", "chatgpt_pro": return "Pro"
+        case "free", "chatgpt_free": return "Free"
+        case "team", "chatgpt_team": return "Team"
+        case "enterprise", "chatgpt_enterprise": return "Enterprise"
+        case "business", "chatgpt_business": return "Business"
+        default: break
+        }
+        // Compound identifiers: name the family, never the tier.
+        for (needle, label) in [("enterprise", "Enterprise"), ("business", "Business"),
+                                ("team", "Team"), ("plus", "Plus"), ("pro", "Pro")] {
+            if v.contains(needle) { return label }
+        }
+        return nil
     }
 }
