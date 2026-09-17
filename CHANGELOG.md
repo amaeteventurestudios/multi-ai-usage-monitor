@@ -1,127 +1,121 @@
 # Changelog
 
-All notable changes to this project are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.3.1] - 2026-08-20
-
 ### Added
-- **Settings pane** (menu → *Settings…*, or ⌘,). Shows each provider as
-  detected / not signed in / disabled, with the credential source and the
-  account it last saw. Lets you hide a provider you don't want in the menu bar,
-  point at a **custom credential path** for non-default installs
-  (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, …), and set the **poll interval** and
-  **alert threshold**.
-- The alert threshold now also drives the colour ramp, so a bar turns red at the
-  same point the notification fires.
+
+- **Background opacity control** in Settings → Display. A slider from 60% to
+  100% (default 90%) sets how solid the app's own windows are drawn. It applies
+  to the settings window and the account editor sheet immediately, with no
+  restart, and persists between launches. The tint is the dynamic system window
+  colour, so Dark Mode keeps its contrast instead of washing out. The floor is
+  deliberately above zero — a preference that can make the app unreadable is not
+  worth offering.
 
 ### Changed
-- Poll interval and alert threshold moved from compile-time constants into
-  preferences (defaults unchanged: 10 minutes, 90%). Both are clamped
-  (1–120 minutes, 1–100%) so a mistyped value can't hammer the API or disable
-  polling entirely.
 
-## [0.3.0] - 2026-08-20
+- The copyright holder for this project's own contributions is now
+  **Amaete Umanah** rather than Amaete Venture Studios, in LICENSE, NOTICE, the
+  per-file modification headers and the About pane. Upstream attribution to
+  Georgios Stavropoulos and stavrop/ai-usage-monitor is unchanged.
+
+## [0.1.0] — Phase One
+
+First release of **Multi AI Usage Monitor**, a fork of
+[stavrop/ai-usage-monitor](https://github.com/stavrop/ai-usage-monitor)
+rebuilt around multiple accounts per provider.
+
+Versioning restarts at 0.1.0: this is a new project with a new bundle
+identifier, not a continuation of the upstream version series.
 
 ### Added
-- **ChatGPT usage.** The app now also reports OpenAI rate-limit windows, read
-  from the credential the ChatGPT desktop app / Codex CLI already store at
-  `~/.codex/auth.json`. Windows are labelled by length (*Monthly*, *5-hour*, …),
-  and code-review limits and credit balances appear when the account has them.
-- Providers are **auto-detected**: whichever of Claude Code and ChatGPT/Codex is
-  signed in on the Mac gets a section. A provider that isn't signed in is hidden
-  rather than shown as an error.
+
+- **Accounts as first-class objects.** An `AIAccount` has its own display name,
+  enabled state, ordering, credential source, reset behaviour and notification
+  threshold. Two Claude accounts and two OpenAI accounts can be monitored at
+  once, and adding a fifth is a settings change.
+- **Per-account credential sources.** Claude accounts read from Claude Code's
+  Keychain item, from a credential imported into this app's own Keychain entry,
+  or from a JSON file. OpenAI accounts read from `~/.codex/auth.json` or any
+  other path. Configuring one account never changes another's source.
+- **Credential import** into this app's Keychain service, via a secure field, so
+  a second Claude account can coexist with the first.
+- **Per-account weekly reset rules**, used as a clearly-labelled fallback when a
+  provider reports no reset time, computed with calendar arithmetic so daylight
+  saving transitions are handled correctly.
+- **Generic usage metrics** covering percentage- and count-based allowances, with
+  states for available, loading, stale, unsupported, authentication-required,
+  rate-limited and error — so an allowance the app cannot read says so instead of
+  showing nothing.
+- **Error isolation per account**, with actionable recovery text naming the
+  account and its credential source.
+- **Stale data handling**: a failed refresh keeps the last good numbers, marked
+  stale with their age.
+- **Menu bar summary modes** — compact, per provider, and minimal — plus toggles
+  for percentages, badges, countdowns and highest-only.
+- **Redesigned settings** with Accounts, Display, Notifications, Refresh,
+  Advanced and About sections, an account editor, and account reordering.
+- **Notification deduplication** keyed by account, metric, threshold and usage
+  window, re-arming automatically after each reset; separate one-off warnings for
+  authentication failures.
+- **Concurrent refresh** with per-account exponential backoff that honours
+  `Retry-After`.
+- **Diagnostics**: levelled local logging with redaction of tokens, keys, bearer
+  headers, home paths and e-mail addresses, plus "Copy Diagnostics" and
+  "Open Logs".
+- **Migration** from a previous installation: old provider switches, custom
+  paths, refresh interval and alert threshold are carried across, and an account
+  is created for each credential actually present.
+- **A test suite** (`./test.sh`, 300+ assertions) covering reset arithmetic
+  including both DST transitions, persistence, migration, provider parsing
+  against sanitised fixtures, notification dedup, staleness, error
+  classification, redaction and menu bar formatting.
+- **Documentation**: README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, plus
+  `docs/DECISIONS.md`, `docs/KNOWN_LIMITATIONS.md`, `docs/PRIVACY.md` and
+  `docs/QA.md`. GitHub issue and pull request templates, and a CI workflow.
 
 ### Changed
-- **Renamed to AI Usage Monitor** (was "Usage Monitor for Claude"), since it is
-  no longer Claude-specific. The Homebrew cask token is now `ai-usage-monitor`;
-  the tap carries a `cask_renames.json` entry so existing installs migrate on
-  `brew update`. The bundle identifier is deliberately unchanged, so preferences
-  and notification permissions carry over.
-- Menu bar shows both providers as `C 45% · G 7%`. With a single provider it
-  keeps the previous compact form including the reset countdown.
-- The dropdown groups rows under a per-provider header (only when more than one
-  provider is present, so single-provider layout is unchanged).
-- Polling, rate-limit backoff, and error state are now **per provider** — one
-  being signed out, expired, or 429'd no longer affects the other.
-- Threshold notifications are namespaced per provider, so identically-named
-  buckets can't suppress each other.
+
+- **Renamed** from "AI Usage Monitor" / `ClaudeUsage.app` to
+  **Multi AI Usage Monitor**, bundle identifier
+  `com.amaeteventurestudios.multi-ai-usage-monitor`.
+- **OpenAI metrics are named "Codex …"**, with the window read from the
+  `limit_window_seconds` the API reports. The previous "ChatGPT · Weekly" label
+  described a Codex window and read as a chat-message allowance.
+- **Percentages are explicitly "used"** everywhere, so a number can never be
+  misread as remaining.
+- **Restructured** a single 1,400-line `main.swift` into `Sources/Core`
+  (logic, storage, providers; no AppKit) and `Sources/App` (the interface).
+- **Default refresh interval** is 5 minutes, chosen from a fixed list rather
+  than a free-text field.
+- `build.sh` pins the deployment target to macOS 12.0 explicitly and produces a
+  universal binary when the toolchain can cross-compile.
+
+### Removed
+
+- The launch-time tip jar and the donation link to the upstream author.
+  Attribution now lives in the About pane, the README and NOTICE.
+- Upstream release automation (Homebrew cask template, `RELEASE.md`,
+  `tools/build_release.sh`) and the upstream GitHub Pages site, which pointed at
+  a repository and tap that do not host this project.
 
 ### Security
-- The ChatGPT credential is treated as **read-only**. The app never writes
-  `~/.codex/auth.json` and never refreshes that token: those tools own it, and a
-  bad write would sign the user out of Codex. An expired token is reported in the
-  menu instead.
 
-## [0.2.3] - 2026-08-20
+- No secret is written to user defaults, settings, logs or error messages.
+- `~/.codex/auth.json` is never written; credential *files* are never modified.
+- Removing an account deletes only a credential copy this app imported.
+- Diagnostics are redacted before reaching the clipboard.
 
-### Changed
-- Maintenance release: the 0.2.2 code republished as a freshly Developer
-  ID-signed, notarized and stapled build. **No functional changes** — `main.swift`
-  is identical to 0.2.2.
-- `packaging/ai-usage-monitor.rb` (the canonical cask template) had been
-  left at 0.2.1 when the tap cask was bumped to 0.2.2; template and shipped cask
-  are back in sync.
-- Fixed the changelog's comparison links, which were missing a `[0.2.2]` entry.
+### Known limitations
 
-## [0.2.2] - 2026-07-29
+- ChatGPT message allowances cannot be read with the available credential and
+  are reported as `Unavailable` rather than estimated. See
+  [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
 
-### Added
-- Menu items: **Star on GitHub**, **Privacy Policy**, and **Terms of Service**.
-- The support window now also invites a GitHub star (alongside the tip jar).
-- Privacy Policy and Terms of Service pages (GitHub Pages) + a README screenshot.
-
-## [0.2.1] - 2026-07-17
-
-### Fixed
-- **Rate-limit (HTTP 429) resilience.** The usage endpoint sits behind an edge
-  rate limiter that returns `429` with a `Retry-After` hint. The app now parses
-  `Retry-After` (seconds or HTTP-date), keeps the last-good numbers on screen,
-  and schedules a single backoff retry that waits **at least** as long as the
-  server asks — so it no longer polls back into an open window and keeps it
-  armed. Without a server hint it falls back to exponential backoff (30s → 30m
-  cap) with jitter to decorrelate from other clients on the same account. A
-  successful fetch clears the backoff. Previously any non-2xx just showed
-  "Last refresh failed" until the next 10-minute poll, with no `Retry-After`
-  handling.
-
-## [0.2.0] - 2026-07-14
-
-### Added
-- **Colored gradient usage bars** in the dropdown. Each bucket (session,
-  weekly-all, per-model weekly) now renders as a rounded progress bar that ramps
-  green → amber → red with severity, instead of a plain text percentage row.
-- **Pay-as-you-go credit balance.** A **Credits (monthly)** row shows what you've
-  used, what's remaining, and the monthly cap in dollars, behind the same
-  severity-colored bar. Parsed from the usage endpoint's `spend` block (with a
-  fallback to the legacy `extra_usage` field). The API exposes no reset timestamp
-  for credits, so the row is labeled monthly rather than showing a countdown.
-
-## [0.1.0] - 2026-07-02
-
-### Added
-- Initial public release of the macOS menu bar app.
-- Live **session** (5-hour) and **weekly** (7-day) usage in the menu bar with a
-  local countdown to the next reset.
-- Dropdown breakdown: session, weekly-all, and per-model scoped weekly buckets
-  with reset times.
-- One-time-per-window notification when a bucket crosses 90%.
-- Skippable "support this app" tip jar shown on launch (opens donation links in
-  the browser); reopenable from the menu and dismissible with "Don't show again".
-- Reads the Claude Code login credential from the Keychain and refreshes the
-  OAuth token silently when it expires.
-- `build.sh` (Command Line Tools build), `tools/build_release.sh` (Developer ID
-  sign + notarize + staple), launch-at-login template, and an original
-  CoreGraphics app icon.
-
-[Unreleased]: https://github.com/stavrop/ai-usage-monitor/compare/v0.3.1...HEAD
-[0.3.1]: https://github.com/stavrop/ai-usage-monitor/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.3...v0.3.0
-[0.2.3]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/stavrop/ai-usage-monitor/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/stavrop/ai-usage-monitor/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/stavrop/ai-usage-monitor/releases/tag/v0.1.0
+[Unreleased]: https://github.com/amaeteventurestudios/multi-ai-usage-monitor/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/amaeteventurestudios/multi-ai-usage-monitor/releases/tag/v0.1.0

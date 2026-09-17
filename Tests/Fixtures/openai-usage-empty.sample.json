@@ -1,0 +1,5 @@
+{
+  "email": "user@example.com",
+  "plan_type": "plus",
+  "rate_limit": { "allowed": true, "primary_window": null, "secondary_window": null }
+}

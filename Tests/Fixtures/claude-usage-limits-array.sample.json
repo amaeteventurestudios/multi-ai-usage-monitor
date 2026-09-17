@@ -1,0 +1,9 @@
+{
+  "limits": [
+    { "kind": "session", "utilization": 5, "resets_at": "2026-06-15T18:00:00.500Z" },
+    { "kind": "weekly_all", "utilization": 30, "resets_at": "2026-06-22T11:00:00Z" },
+    { "kind": "weekly_scoped", "utilization": 55, "resets_at": "2026-06-22T11:00:00Z",
+      "scope": { "model": { "display_name": "Sonnet" } } }
+  ],
+  "rate_limit_tier": "default"
+}

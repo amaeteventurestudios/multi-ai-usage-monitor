@@ -1,0 +1,12 @@
+{
+  "five_hour": { "percent": 12, "resets_at": "2026-06-15T18:00:00Z" },
+  "seven_day": { "percent": 43, "resets_at": "2026-06-22T11:00:00Z" },
+  "seven_day_opus": { "percent": 61, "resets_at": "2026-06-22T11:00:00Z" },
+  "subscription_type": "max",
+  "spend": {
+    "enabled": true,
+    "used": { "amount_minor": 429, "currency": "USD", "exponent": 2 },
+    "limit": { "amount_minor": 5000, "currency": "USD", "exponent": 2 },
+    "percent": 9
+  }
+}

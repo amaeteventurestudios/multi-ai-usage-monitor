@@ -1,0 +1,33 @@
+{
+  "user_id": "user-EXAMPLE0000000000000000",
+  "account_id": "00000000-0000-4000-8000-000000000000",
+  "email": "user@example.com",
+  "plan_type": "self_serve_business_prolite",
+  "rate_limit": {
+    "allowed": true,
+    "limit_reached": false,
+    "primary_window": {
+      "used_percent": 89,
+      "limit_window_seconds": 604800,
+      "reset_after_seconds": 281305,
+      "reset_at": 1789951159
+    },
+    "secondary_window": {
+      "used_percent": 22,
+      "limit_window_seconds": 18000,
+      "reset_after_seconds": 7200,
+      "reset_at": 1789700000
+    }
+  },
+  "code_review_rate_limit": null,
+  "additional_rate_limits": null,
+  "model_usage": {
+    "example-model-a": { "available": true, "available_at": null },
+    "example-model-b": { "available": false, "available_at": null }
+  },
+  "credits": {
+    "has_credits": true,
+    "unlimited": false,
+    "balance": 12.5
+  }
+}

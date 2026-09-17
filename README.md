@@ -1,204 +1,325 @@
-# AI Usage Monitor
+# Multi AI Usage Monitor
 
-A tiny macOS **menu bar** app that shows your **Claude** and **ChatGPT** usage as
-live percentages with reset times — the same numbers `/usage` shows inside Claude
-Code and `/status` shows inside Codex — without opening a terminal.
+**One menu bar dashboard for monitoring usage across multiple Claude and OpenAI accounts.**
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![macOS 12+](https://img.shields.io/badge/macOS-12%2B-lightgrey.svg)](#requirements)
+[![Swift](https://img.shields.io/badge/Swift-5.7-orange.svg)](#build-from-source)
+[![Open Source](https://img.shields.io/badge/Open%20Source-yes-brightgreen.svg)](#contributing)
+
+---
+
+## Overview
+
+Multi AI Usage Monitor is a native macOS menu bar app that shows how much of each
+AI subscription allowance you have used, for **every account you have**, in one
+place. Click the menu bar item and you can immediately answer:
+
+- Which account is this?
+- Which provider is it?
+- Which allowance is this — a rolling session window, a weekly one, Codex or ChatGPT?
+- How much have I used, and how much is left?
+- When does it reset, and is that the provider's own reset time or my local schedule?
+- Is this number current, or stale?
+- Did one of my accounts stop authenticating?
+
+It is local-first, has no backend of its own, and collects nothing.
+
+## Why this exists
+
+AI subscription limits are confusing, and they get more confusing the more
+accounts you have. Two Claude accounts reset at different times. An OpenAI
+Business workspace and a personal Plus account are separate allowances entirely.
+The Codex weekly window is not the same thing as your ChatGPT message allowance.
+
+Most usage monitors assume one account per provider. This one does not: an
+**account** is the unit the app stores credentials for, refreshes, renders,
+warns about and errors on — so two Claude accounts are genuinely independent, and
+adding a third is a settings change rather than a rewrite.
+
+## Screenshots
+
+Screenshots are not included in this release. Every screenshot of a working
+install contains a real e-mail address, plan identifier, credential path and
+usage figures, and sanitising one properly takes more care than shipping it
+quickly deserves. The dropdown layout is described in
+[docs/QA.md](docs/QA.md), and sanitised screenshots will land in
+`docs/images/` in a future release.
+
+Conceptually, the dropdown looks like this:
 
 ```
-C 67% · G 7%
+AI USAGE
+
+CLAUDE
+ Personal Claude
+ C1 · Keychain · Claude Code · Connected
+   Session                                 21% used
+   ▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+   Resets 4:20 PM · 4h 30m remaining
+
+   Weekly (all)                            15% used
+   ▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+   Resets Monday 7:00 AM · 3d 19h remaining
+
+ Work Claude
+ C2 · Keychain · this app · Connected
+   ...
+   Resets Monday 2:00 AM · 3d 14h remaining
+
+OPENAI
+ Business Premium
+ G1 · File · Codex default · Connected
+   Codex Weekly                            89% used
+   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░
+   Resets Sunday 5:39 PM · 3d 5h remaining
+
+   ChatGPT messages                     Unavailable
+   Not detectable yet — this credential only exposes Codex usage.
+
+Updated 11:04:22 AM
+Refresh Now                                       ⌘R
+Settings…                                         ⌘,
+Quit                                              ⌘Q
 ```
 
-It picks up whichever providers are already signed in on your Mac. With only one,
-the title keeps its original compact form including the reset countdown:
+## Features
 
-```
-⛏ 67% · 4h12m
-```
+- **Multiple accounts per provider** — two Claude accounts and two OpenAI
+  accounts side by side, each with its own credential, reset schedule, warning
+  threshold and error state.
+- **Honest numbers.** Every percentage is *used*, and the word "used" is printed
+  next to it. Nothing is estimated, extrapolated or counted locally and passed
+  off as authoritative. An allowance the app cannot read says `Unavailable` and
+  explains why.
+- **Per-account reset schedules**, with the provider's own reset time preferred
+  and a local weekly rule as a clearly-labelled fallback. Daylight saving is
+  handled by the calendar, not by adding 604800 seconds.
+- **Error isolation.** One account failing never blanks another, and never turns
+  the menu bar title into a single word "Error".
+- **Stale data is kept, not discarded.** A failed refresh costs you the freshness
+  of a number, never the number.
+- **Local notifications** at a configurable threshold, deduplicated per account,
+  per metric and per usage window, re-arming automatically after each reset.
+- **Three menu bar summary modes** — compact (`C1 12% · C2 43% · G 88%`),
+  per provider (`Claude 43% · OpenAI 88%`), or minimal (`AI`).
+- **Background opacity control** — a slider from 60% to 100% for how solid the
+  app's windows are drawn, applied immediately and remembered between launches.
+- **No telemetry, no analytics, no backend, no account.**
 
-<p align="center">
-  <img src="docs/screenshot.png" alt="AI Usage Monitor menu showing session, weekly, and credits usage" width="300">
-</p>
+## Supported providers
 
-Click the menu bar item for a breakdown, grouped by provider. Each bucket is a
-colored gradient bar (green → amber → red as it fills) with its reset time:
+| Provider | Metrics | Source |
+|---|---|---|
+| Claude (Anthropic) | Session (5-hour), Weekly (all), Weekly (model-scoped), extra-usage credits | Claude Code's OAuth credential, plus the Anthropic OAuth usage endpoint |
+| OpenAI | Codex rolling window, Codex weekly window, Codex code review, any additional window the API reports | The Codex/ChatGPT credential at `~/.codex/auth.json`, plus the Codex usage endpoint |
 
-- **Claude** — session (5-hour), weekly-all, and per-model weekly. If you have
-  pay-as-you-go credits, a **Credits (monthly)** row shows what you've used,
-  what's left, and the monthly cap in dollars.
-- **ChatGPT** — the primary and secondary rate-limit windows for your plan
-  (labelled by length, e.g. *Monthly* or *5-hour*), plus code-review limits and a
-  credit balance when your account has them.
+ChatGPT's own message allowance is **not** currently readable — see
+[Known limitations](docs/KNOWN_LIMITATIONS.md).
 
-It notifies you once per window when any bucket crosses 90%. The two providers are
-polled independently: one being signed out, expired, or rate-limited never affects
-the other.
+## Multi-account support
 
-> **Unofficial project — not affiliated with Anthropic or OpenAI.** This is an
-> independent utility, not affiliated with, endorsed by, or sponsored by either.
-> "Claude", "Claude Code", and "Anthropic" are trademarks of Anthropic PBC;
-> "ChatGPT", "Codex", and "OpenAI" are trademarks of OpenAI — used here only to
-> describe what the software works with. It reads **undocumented** usage endpoints
-> and reuses the public Claude Code OAuth client id, so it may break at any time
-> and could conflict with either provider's terms of service. Use it **at your own
-> risk**. It authenticates only with the logins already on your Mac and sends each
-> token only to its own provider — no data goes anywhere else.
+Each account is an independent object with its own:
 
-## Settings
+- display name (rename it to whatever makes sense to you)
+- enabled/disabled state and position in the list
+- credential source
+- reset behaviour
+- notification threshold
 
-Open **Settings…** from the menu (or ⌘,). The app never signs you in — credentials
-come from Claude Code and the ChatGPT app / Codex CLI — so the pane is about what
-was detected and how it's polled:
+**Claude** accounts can read from:
 
-- **Per provider:** whether it was detected, which credential it's reading, and the
-  account it last saw. Untick one to hide it from the menu bar entirely.
-- **Custom path:** point a provider at a non-default credential location, for
-  setups using `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or a credentials file rather
-  than the Keychain.
-- **Refresh every N minutes** (default 10, clamped 1–120) and **notify at N%**
-  (default 90, clamped 1–100). The threshold also drives the colour ramp, so a bar
-  turns red exactly when it would notify you.
+1. **Claude Code's Keychain item** — the credential Claude Code already manages.
+2. **This app's own Keychain entry** — a credential you explicitly imported.
+   This is how a second Claude account coexists with the first: Claude Code
+   stores exactly one credential, so a second account needs its own home.
+   Removing the account deletes only this copy.
+3. **A JSON credential file** at a path you choose. Read-only, never written.
+
+**OpenAI** accounts can read from:
+
+1. **`~/.codex/auth.json`** — the default the Codex CLI and ChatGPT app share.
+2. **Any other `auth.json` path**, so a second workspace's credential can live
+   somewhere else (for example `~/.codex-personal/auth.json`).
+
+Choosing a source for one account never changes another account's source.
 
 ## Requirements
 
-- macOS 12 (Monterey) or later.
-- At least one of:
-  - **Claude Code** installed and signed in (`claude`) — the app reads the login
-    credential it stores in your Keychain.
-  - **ChatGPT desktop app** or **Codex CLI** signed in — the app reads (never
-    writes) the credential at `~/.codex/auth.json`.
+- macOS 12 Monterey or later
+- Intel (x86_64) or Apple Silicon (arm64)
+- Xcode Command Line Tools (`xcode-select --install`) — a full Xcode install is
+  not required
+- Claude Code and/or the ChatGPT desktop app / Codex CLI, signed in
 
-  No API key or extra token is needed for either, and you can have both.
-- Building from source additionally needs the **Xcode Command Line Tools**
-  (`xcode-select --install`).
+## Installation
 
-## Install
-
-### Download a release (recommended)
-
-Pre-built binaries live on the **[Releases page](https://github.com/stavrop/ai-usage-monitor/releases/latest)**
-(the "Releases" section of the repo — a separate tab, not a folder in the file
-list). Download `ClaudeUsage.zip` from the latest release, unzip it, and drag
-`ClaudeUsage.app` to `/Applications`.
-
-Release builds are signed with a Developer ID and notarized by Apple, so they
-open normally — no Gatekeeper override needed.
-
-### Homebrew
+There is no signed release yet. Build from source:
 
 ```sh
-brew tap stavrop/tap
-brew install --cask ai-usage-monitor
+git clone https://github.com/amaeteventurestudios/multi-ai-usage-monitor.git
+cd multi-ai-usage-monitor
+./build.sh
+open "Multi AI Usage Monitor.app"
 ```
 
-### Build from source
+The app appears in the menu bar. It has no Dock icon and no main window.
+
+### Launch at login
+
+Copy `launchd/com.amaeteventurestudios.multi-ai-usage-monitor.plist` to
+`~/Library/LaunchAgents/`, replace `__APP_BINARY_PATH__` with the absolute path
+to the built binary, and load it:
 
 ```sh
-git clone https://github.com/stavrop/ai-usage-monitor.git
-cd ai-usage-monitor
-./build.sh            # compiles ClaudeUsage.app with the Command Line Tools
-open ClaudeUsage.app
+launchctl bootstrap "gui/$(id -u)" \
+  ~/Library/LaunchAgents/com.amaeteventurestudios.multi-ai-usage-monitor.plist
 ```
 
-When iterating with the app installed as a login item, use
-`./rebuild-and-restart.sh` — it stops the running instance before rebuilding, so
-macOS doesn't kill the new build for a code-signature mismatch, then relaunches it.
+`./rebuild-and-restart.sh` stops a running instance, rebuilds and restarts it —
+useful while developing, and necessary because overwriting a running binary
+invalidates its ad-hoc signature.
 
-> A source build is **unsigned**. macOS runs a locally-built app fine, but if you
-> copy it to another Mac, remove the quarantine flag first:
-> `xattr -dr com.apple.quarantine ClaudeUsage.app`. For distributable, notarized
-> builds see [RELEASE.md](RELEASE.md).
-
-On first launch macOS asks for permission to read the `Claude Code-credentials`
-Keychain item — choose **Always Allow** so it can refresh silently.
-
-- **90% alerts** use `osascript`, so the notification is attributed to *Script
-  Editor*. If you don't see alerts, allow notifications for *Script Editor* in
-  System Settings → Notifications.
-
-## Launch at login
-
-A LaunchAgent template lives in [`launchd/`](launchd/). Point it at the binary you
-just built and load it:
+## Build from source
 
 ```sh
-# Fill in the absolute path to the built binary and install the agent:
-APP_BIN="$(pwd)/ClaudeUsage.app/Contents/MacOS/ClaudeUsage"
-sed "s#__APP_BINARY_PATH__#${APP_BIN}#" launchd/com.local.claudeusage.plist \
-    > ~/Library/LaunchAgents/com.local.claudeusage.plist
-
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.local.claudeusage.plist
+./build.sh     # builds "Multi AI Usage Monitor.app" (universal where possible)
+./test.sh      # runs the test suite
 ```
 
-```sh
-# disable:  launchctl bootout   gui/$(id -u)/com.local.claudeusage
-# restart:  launchctl kickstart -k gui/$(id -u)/com.local.claudeusage
-```
-
-> The agent stores an absolute path. If you move or rebuild the app elsewhere,
-> regenerate the plist and re-bootstrap.
-
-## How it works
-
-The app reads the OAuth credential Claude Code already stored in your login
-Keychain (`Claude Code-credentials`), refreshes the access token when it has
-expired, and polls the usage endpoint every 10 minutes (the countdown in the
-title ticks locally between polls, so no extra network traffic):
-
-```http
-GET https://api.anthropic.com/api/oauth/usage
-Authorization: Bearer <oauth-access-token>
-anthropic-beta: oauth-2025-04-20
-```
-
-Relevant fields: `five_hour` (session) and `seven_day` (weekly), each with a
-utilization percentage and `resets_at`; a `limits[]` array carrying per-model
-scoped weekly buckets; and a `spend` block with the pay-as-you-go credit balance
-(`used`/`limit` in minor currency units).
-
-Nothing is stored except what Claude Code already keeps in your Keychain, and the
-token is sent only to Anthropic's own hosts.
+`build.sh` uses `swiftc` and a hand-written `Info.plist` — no Xcode project, no
+GUI step. The deployment target is pinned to macOS 12.0.
 
 ## Configuration
 
-Defaults live at the top of [`main.swift`](main.swift):
+Open **Settings…** from the menu (⌘,). On first launch the app looks for
+credentials already on this Mac and creates an account for each one it finds,
+carrying across any settings from a previous installation.
 
-| Constant           | Default | Meaning                                   |
-|--------------------|---------|-------------------------------------------|
-| `REFRESH_INTERVAL` | `600`   | Seconds between usage polls (10 min).     |
-| `ALERT_THRESHOLD`  | `90`    | Percent at which a bucket notifies once.  |
+### Claude accounts
 
-Edit and re-run `./build.sh` to change them.
+**First account** — usually detected automatically from Claude Code's Keychain
+item. If not: *Accounts → + Add Claude Account*, choose
+*Claude Code credential (macOS Keychain)*, name it, save.
 
-## The app icon
+**Second account** — Claude Code keeps only one credential at a time, so the
+second account needs its own copy:
 
-The icon is original — a usage-gauge mark drawn from scratch with CoreGraphics
-(see [`tools/make_icon.swift`](tools/make_icon.swift)). Regenerate with:
+1. Sign in to the second Claude account with Claude Code.
+2. Copy that account's credential JSON (the object containing `claudeAiOauth`)
+   out of the login Keychain.
+3. In *Settings → Accounts → + Add Claude Account*, choose
+   *Imported credential (this app's Keychain entry)* and use
+   **Import Credential…**. The value is typed into a secure field and written
+   straight to the Keychain.
+4. Sign Claude Code back in to whichever account you use day to day.
+
+From then on the two accounts read from different places and never overwrite
+each other.
+
+### Reset schedules
+
+Both providers report their own reset times, and those are used as-is and
+labelled `Resets …`. If a provider goes quiet, an account's **Weekly reset
+fallback** takes over and is labelled `Resets (local schedule) …` so you always
+know which you are looking at. Set it per account in the editor — for example
+Monday 02:00 for one account and Monday 07:00 for another. Times are in your
+Mac's current time zone and follow daylight saving correctly.
+
+### OpenAI accounts
+
+**Business/work account** — usually detected from `~/.codex/auth.json`.
+
+**Second (personal) account** — sign in with that account, copy the resulting
+`auth.json` somewhere else (for example `~/.codex-personal/auth.json`), then
+*+ Add OpenAI Account → Credential file at a custom path → Choose File…*. The
+file is validated when you pick it and only ever read.
+
+## Credential security
+
+- Secrets live in the **macOS Keychain**, or in credential files that the
+  provider's own tools already keep on this Mac.
+- Nothing secret is ever written to user defaults, settings files, logs or the
+  clipboard.
+- `~/.codex/auth.json` is **only read, never written**. The Codex CLI and the
+  ChatGPT app own its refresh cycle; an expired token is reported, not renewed.
+- Claude tokens are refreshed and written back only to the store they came from.
+  A credential *file* you pointed at is never modified — a refreshed token is
+  held in memory for the session instead.
+- Removing an account deletes only a credential copy this app imported. Claude
+  Code's item and `~/.codex/auth.json` are never touched.
+- Diagnostics strip JWTs, API keys, bearer headers, token fields, home directory
+  paths and (unless you opt in) e-mail addresses.
+
+## Privacy
+
+Local-first. Usage is fetched directly from Anthropic and OpenAI using your own
+credentials. There is no server of ours in the loop, no account to create, and
+no analytics or telemetry of any kind. See [docs/PRIVACY.md](docs/PRIVACY.md).
+
+## Notifications
+
+Warnings fire once per account, per metric, per usage window, and re-arm after
+that window resets. The global threshold defaults to 90% used; any account can
+override it. Auth failures raise a separate one-off warning naming the account
+that needs attention.
+
+Notifications are delivered through `osascript`, which means macOS attributes
+them to Script Editor. That is a consequence of running unsigned —
+see [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## Known limitations
+
+The honest list lives in [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+The headline one: **ChatGPT message allowances cannot currently be read.** The
+Codex credential is not authorised for the endpoints that would report them, and
+this app will not fabricate a count by watching your local activity, because you
+also send messages from the web and desktop clients. The metric is shown as
+`Unavailable` with the reason, and the architecture is ready for real numbers the
+day a readable source exists.
+
+## Roadmap
+
+Phase One (this release) is the multi-account foundation. Possible later work:
+historical graphs and usage trends, cost analysis, additional providers
+(Gemini, GitHub Copilot, Cursor, Perplexity, OpenRouter), and optional
+cross-device sync. None of it is promised.
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md), which covers
+building, testing, and how to add a provider adapter. Please read
+[SECURITY.md](SECURITY.md) before reporting anything credential-related, and
+never attach tokens or auth files to an issue.
+
+## Upstream attribution
+
+This project is a derivative of
+**[stavrop/ai-usage-monitor](https://github.com/stavrop/ai-usage-monitor)** by
+Georgios Stavropoulos, used under the Apache License 2.0. The credential
+reading, token refresh, response parsing and progress-bar drawing all began
+there, and the project is much better for it. Please star the upstream project
+too.
+
+To track upstream changes:
 
 ```sh
-swift tools/make_icon.swift icon_1024.png
+git remote add upstream https://github.com/stavrop/ai-usage-monitor.git
+git fetch upstream
+git log --oneline HEAD..upstream/main    # what's new upstream
+git diff HEAD upstream/main -- <path>    # compare a specific area
 ```
 
-## Support
-
-This app is free and open-source, built in spare time. If it earns a spot in your
-menu bar, two small things help more than you'd think:
-
-- ⭐️ **[Star it on GitHub](https://github.com/stavrop/ai-usage-monitor)** —
-  stars are how other people find it, and they genuinely make my day.
-- ☕️ **[Buy me a coffee](https://buymeacoffee.com/stavrop)** — a small tip keeps the
-  late-night maintenance caffeinated and the updates coming.
-
-No pressure at all — even telling a friend means a lot. Thank you! 🙏
-
-## Privacy, terms & security
-
-This app has no servers and collects nothing — it reads the Claude Code and
-ChatGPT/Codex logins already on your Mac and talks only to Anthropic and OpenAI. See [PRIVACY.md](PRIVACY.md),
-[TERMS.md](TERMS.md), and [SECURITY.md](SECURITY.md). Contributions welcome — see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+The architectures have diverged, so upstream changes should be reviewed and
+ported deliberately rather than merged wholesale.
 
 ## License
 
-[Apache License 2.0](LICENSE) © 2026 Georgios Stavropoulos. See also [NOTICE](NOTICE).
-Apache-2.0 is used partly for its explicit trademark clause (§6): the license
-grants no rights to the "Claude"/"Anthropic" marks this project refers to.
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+The upstream project is Apache-2.0 licensed, and a derivative work cannot be
+relicensed under MIT without the upstream author's permission. This project
+therefore stays Apache-2.0, which is permissive in substantially the same way.
+The reasoning is recorded in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+Not affiliated with, endorsed by, or sponsored by Anthropic or OpenAI.

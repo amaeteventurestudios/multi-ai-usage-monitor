@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/amaeteventurestudios/multi-ai-usage-monitor/security
+    about: Please report security issues privately, never as a public issue. Never include tokens or auth files.
+  - name: Known limitations
+    url: https://github.com/amaeteventurestudios/multi-ai-usage-monitor/blob/main/docs/KNOWN_LIMITATIONS.md
+    about: Check here first — some gaps (like ChatGPT message counts) are known and explained.

@@ -1,24 +1,43 @@
 # Build artifacts — release binaries live in GitHub Releases, never in the tree
 *.app/
+"Multi AI Usage Monitor.app"/
 ClaudeUsage.app/
 *.zip
 *.o
 *.dSYM/
 *.swiftmodule
+.build/
+DerivedData/
 
 # macOS
 .DS_Store
 
+# IDE / editor local state
+.idea/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.vscode/
+
 # Logs / local
-/tmp/claudeusage.*.log
+/tmp/multi-ai-usage-monitor.*.log
 *.log
 
-# Secrets — never commit tokens or signing keys
+# Credentials — never commit tokens, auth files or keys.
+# Fixtures are deliberately named *.sample.json so they cannot match these.
+auth.json
+**/auth.json
+credentials.json
+*.credentials
 *.token
 *.p8
 *.p12
 .env
 .env.*
+
+# Local settings dumps and private screenshots
+*.private.png
+*.private.json
+settings-dump*.json
 
 # Local LaunchAgent with a machine-specific absolute path
 launchd/*.local.plist
