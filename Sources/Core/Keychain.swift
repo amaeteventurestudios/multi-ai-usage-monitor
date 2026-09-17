@@ -44,8 +44,34 @@ enum Keychain {
         let r = runProcess("/usr/bin/security",
                            ["find-generic-password", "-s", service, "-a", account, "-w"])
         guard r.status == 0 else { return nil }
-        let value = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = decodeSecurityOutput(r.out.trimmingCharacters(in: .whitespacesAndNewlines))
         return value.isEmpty ? nil : value
+    }
+
+    /// `security` prints a password as plain text only while it is printable
+    /// ASCII; anything containing a newline or other control character comes
+    /// back hex-encoded instead. A pretty-printed credential document hits that
+    /// path, so the hex has to be decoded or the value reads back as gibberish.
+    ///
+    /// The test is deliberately narrow — an even-length run of lowercase hex
+    /// that decodes to valid UTF-8 *containing a control character* — so a
+    /// password that merely happens to look like hex is returned untouched.
+    static func decodeSecurityOutput(_ raw: String) -> String {
+        guard raw.count >= 2, raw.count % 2 == 0,
+              raw.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return raw }
+
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(raw.count / 2)
+        var index = raw.startIndex
+        while index < raw.endIndex {
+            let next = raw.index(index, offsetBy: 2)
+            guard let byte = UInt8(raw[index..<next], radix: 16) else { return raw }
+            bytes.append(byte)
+            index = next
+        }
+        guard let decoded = String(bytes: bytes, encoding: .utf8),
+              decoded.unicodeScalars.contains(where: { $0.value < 0x20 }) else { return raw }
+        return decoded
     }
 
     /// Create or update an item. `-U` updates in place so we never end up with
