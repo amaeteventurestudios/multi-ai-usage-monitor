@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Short account labels for the menu bar.** Every account has a
+  `shortDisplayName` — derived from its identity (a Claude account from its
+  e-mail, an OpenAI account from its plan) and editable as **Menu Bar Name** in
+  the account editor. The full provider-confirmed identity stays canonical in
+  the dropdown and settings; e-mail addresses are never shown in the menu bar.
+- **Three per-account menu bar formats**, chosen in Settings → Display with a
+  live preview:
+  - Detailed — `C Amaete 57% · C StarLogic 22% · G Business 90% · G Personal 41%`
+  - Compact — `C-A 57% · C-S 22% · G-B 90% · G-P 41%`
+  - Minimal Labels — `A 57% · S 22% · B 90% · P 41%`
+  Abbreviation is generic, deterministic and collision-aware: names expand only
+  as far as they must to stay unambiguous (Business and Beta become `Bu` and
+  `Be`), and two accounts on different providers may share a letter because the
+  provider prefix already separates them.
+
 - **Guided account onboarding.** "+ Add Claude Account" and "+ Add OpenAI
   Account" now open a three-step flow: choose where the credential comes from,
   let the provider confirm who it belongs to, then save. Nothing in it asks
@@ -44,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ShortName.fromEmail` treated `"@example.com"` as if the domain were the local
+  part, because `split(separator:)` drops empty fields.
+
 - **Credentials containing newlines read back as gibberish from the Keychain.**
   `security` hex-encodes any value that is not printable ASCII, and a
   pretty-printed `auth.json` hits that path. Hex output is now decoded on read
@@ -51,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   captured credentials are stored as compact single-line JSON.
 
 ### Changed
+
+- **Menu bar summary modes renamed so the two different "Minimal" ideas are no
+  longer both called Minimal.** The mode is now **Per Account**, **Provider** or
+  **Icon Only**; the width of a per-account label is a separate setting with its
+  own three options. Preferences stored under the old names migrate rather than
+  resetting, landing existing users on Per Account + Detailed.
+- The dropdown's account subtitle leads with the menu bar alias, so a label up
+  there can be traced to a full identity at a glance.
 
 - **Menu bar summary modes explain themselves.** "Compact — show each account",
   "Provider — highest usage per provider" and "Minimal — just a marker", each

@@ -22,6 +22,7 @@ final class AccountEditorController: NSObject {
     var sheetWindow: NSWindow? { sheet }
 
     private var nameField: NSTextField!
+    private var shortNameField: NSTextField!
     private var enabledBox: NSButton!
     private var preferProviderBox: NSButton!
     private var useWeeklyBox: NSButton!
@@ -104,6 +105,12 @@ final class AccountEditorController: NSObject {
         nameField.translatesAutoresizingMaskIntoConstraints = false
         nameField.widthAnchor.constraint(equalToConstant: 320).isActive = true
 
+        shortNameField = NSTextField(string: account.customShortName ?? "")
+        shortNameField.placeholderString = ShortName.derive(provider: account.provider,
+                                                            identity: account.identity)
+        shortNameField.translatesAutoresizingMaskIntoConstraints = false
+        shortNameField.widthAnchor.constraint(equalToConstant: 200).isActive = true
+
         enabledBox = NSButton(checkboxWithTitle: "Show this account", target: nil, action: nil)
         enabledBox.state = account.enabled ? .on : .off
 
@@ -165,6 +172,13 @@ final class AccountEditorController: NSObject {
             nameField,
             label("Leave empty to use the detected account name.", size: 11,
                   color: .secondaryLabelColor),
+
+            label("Menu Bar Name", size: 12, bold: true),
+            shortNameField,
+            label("Short label used in the menu bar. Leave empty to derive one from the "
+                + "account. E-mail addresses are never shown up there.",
+                  size: 11, color: .secondaryLabelColor, wrap: 440),
+
             enabledBox,
 
             label("Credential", size: 12, bold: true),
@@ -228,6 +242,10 @@ final class AccountEditorController: NSObject {
         var updated = account
         let typed = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         updated.customDisplayName = typed.isEmpty ? nil : typed
+
+        let short = shortNameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.customShortName = short.isEmpty ? nil : String(short.prefix(ShortName.maximumLength))
+
         updated.enabled = enabledBox.state == .on
 
         var overrides = ResetOverrides()

@@ -379,15 +379,4 @@ func runIdentityTests() {
         }
     }
 
-    suite("Menu bar summary modes are explained") {
-        test("every mode has a name and a sentence saying what appears") {
-            for mode in MenuBarSummaryMode.allCases {
-                expect(mode.displayName.contains("—"), "\(mode.rawValue) names what it does")
-                expect(mode.explanation.count > 20, "\(mode.rawValue) is explained")
-            }
-            expect(MenuBarSummaryMode.compact.explanation.contains("account"))
-            expect(MenuBarSummaryMode.provider.explanation.contains("provider"))
-            expect(MenuBarSummaryMode.minimal.explanation.contains("AI"))
-        }
-    }
 }

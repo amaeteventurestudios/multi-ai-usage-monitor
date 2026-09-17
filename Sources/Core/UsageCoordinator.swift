@@ -298,10 +298,10 @@ final class UsageCoordinator {
 
     func menuBarTitle() -> String? {
         MenuBarSummary.title(
-            entries: MenuBarSummary.entries(accounts: store.accounts, states: states, store: store),
+            entries: MenuBarSummary.entries(accounts: store.accounts, states: states),
             mode: settings.menuBarSummaryMode,
+            format: settings.perAccountFormat,
             showPercentages: settings.showPercentages,
-            showBadges: settings.showProviderBadges,
             onlyHighest: settings.onlyHighestInMenuBar)
     }
 

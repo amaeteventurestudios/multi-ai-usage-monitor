@@ -155,7 +155,7 @@ func runAccountTests() {
             let s = AppSettings(defaults: scratchDefaults())
             expectEqual(s.backgroundOpacity, 0.95)
             expectEqual(s.refreshIntervalMinutes, 5)
-            expectEqual(s.menuBarSummaryMode, .compact)
+            expectEqual(s.menuBarSummaryMode, .perAccount)
             expectEqual(s.warningThresholdPercent, 90)
             expect(s.usageWarningsEnabled)
             expect(s.authWarningsEnabled)
@@ -228,11 +228,11 @@ func runAccountTests() {
         test("resetting local settings restores defaults") {
             let s = AppSettings(defaults: scratchDefaults())
             s.warningThresholdPercent = 42
-            s.menuBarSummaryMode = .minimal
+            s.menuBarSummaryMode = .iconOnly
             s.backgroundOpacity = 0.65
             s.resetToDefaults()
             expectEqual(s.warningThresholdPercent, 90)
-            expectEqual(s.menuBarSummaryMode, .compact)
+            expectEqual(s.menuBarSummaryMode, .perAccount)
             expectEqual(s.backgroundOpacity, 0.95)
         }
     }

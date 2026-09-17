@@ -143,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Badge, then whatever secondary metadata we actually know (plan,
             // organisation), then the credential's health. The account's own
             // name carries the identity, so it never needs repeating here.
-            var parts = [store.badge(for: account)]
+            var parts = [account.shortDisplayName]
             if let subtitle = account.subtitle { parts.append(subtitle) }
             parts.append(status == .detected ? "Live" : "Reconnect required")
             customView(AccountHeaderView(name: account.displayName,

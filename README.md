@@ -89,7 +89,9 @@ Quit                                              ⌘Q
   accounts side by side, each with its own credential, reset schedule, warning
   threshold and error state.
 - **Accounts name themselves.** Add an account and the provider is asked who it
-  belongs to, so the menu says `Claude (you@example.com)`, not "Claude 2".
+  belongs to, so the menu says `Claude (you@example.com)`, not "Claude 2". The
+  menu bar uses a short alias instead — `Amaete`, `Business` — so no e-mail
+  address is on display to anyone glancing at your screen.
 - **Add once, then forget about account switching.** Saving an account copies
   its credential into this app's own Keychain entry, so you can sign a
   different account into Claude Code or Codex — and close the browser profile
@@ -107,8 +109,20 @@ Quit                                              ⌘Q
   of a number, never the number.
 - **Local notifications** at a configurable threshold, deduplicated per account,
   per metric and per usage window, re-arming automatically after each reset.
-- **Three menu bar summary modes** — compact (`C1 12% · C2 43% · G 88%`),
-  per provider (`Claude 43% · OpenAI 88%`), or minimal (`AI`).
+- **A menu bar you can actually read.** Choose what the title is about — every
+  account, one figure per provider, or just `AI` — and, for per-account, how
+  wide each label is:
+
+  | Format | Looks like |
+  |---|---|
+  | Detailed | `C Amaete 57% · C StarLogic 22% · G Business 90% · G Personal 41%` |
+  | Compact | `C-A 57% · C-S 22% · G-B 90% · G-P 41%` |
+  | Minimal Labels | `A 57% · S 22% · B 90% · P 41%` |
+
+  Abbreviations are collision-aware: they expand only as far as they must to
+  stay unambiguous. Account order is preserved — never re-sorted by usage —
+  because a menu bar is read positionally. A failing account becomes
+  `C StarLogic !` rather than disappearing.
 - **Background opacity control** — a slider from 70% to 100% (default 95%) for
   how solid the app's windows are drawn, applied immediately and remembered
   between launches.

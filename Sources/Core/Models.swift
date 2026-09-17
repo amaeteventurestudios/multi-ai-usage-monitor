@@ -169,6 +169,10 @@ struct AIAccount: Codable, Equatable, Identifiable {
     /// Who the provider says this account belongs to. `nil` until onboarding
     /// has confirmed it.
     var identity: AccountIdentity?
+    /// A short alias for the menu bar. `nil` means "derive one from the
+    /// identity". Non-sensitive by construction: it is a label, not a
+    /// credential and not an address.
+    var customShortName: String?
     var enabled: Bool
     var order: Int
     var credentialSource: CredentialSource
@@ -180,6 +184,7 @@ struct AIAccount: Codable, Equatable, Identifiable {
          provider: ProviderKind,
          customDisplayName: String? = nil,
          identity: AccountIdentity? = nil,
+         customShortName: String? = nil,
          enabled: Bool = true,
          order: Int = 0,
          credentialSource: CredentialSource,
@@ -189,6 +194,7 @@ struct AIAccount: Codable, Equatable, Identifiable {
         self.provider = provider
         self.customDisplayName = customDisplayName
         self.identity = identity
+        self.customShortName = customShortName
         self.enabled = enabled
         self.order = order
         self.credentialSource = credentialSource
@@ -199,6 +205,16 @@ struct AIAccount: Codable, Equatable, Identifiable {
     /// What the menu, the menu bar and settings call this account.
     var displayName: String {
         AccountNaming.displayName(provider: provider, identity: identity, custom: customDisplayName)
+    }
+
+    /// The alias shown in the menu bar. Never an e-mail address: a row of
+    /// those would be unreadable, and visible to anyone glancing at the screen.
+    var shortDisplayName: String {
+        if let custom = customShortName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !custom.isEmpty {
+            return String(custom.prefix(ShortName.maximumLength))
+        }
+        return ShortName.derive(provider: provider, identity: identity)
     }
 
     /// Secondary metadata (plan, organisation) for the line beneath the name.
@@ -220,7 +236,7 @@ struct AIAccount: Codable, Equatable, Identifiable {
     // itself back then gives way to the real identity once it is discovered; a
     // name the user actually chose is kept.
     private enum CodingKeys: String, CodingKey {
-        case id, provider, customDisplayName, displayName, identity
+        case id, provider, customDisplayName, displayName, identity, customShortName
         case enabled, order, credentialSource, resetOverrides, notificationThresholdPercent
     }
 
@@ -229,6 +245,7 @@ struct AIAccount: Codable, Equatable, Identifiable {
         id = try c.decode(UUID.self, forKey: .id)
         provider = try c.decode(ProviderKind.self, forKey: .provider)
         identity = try c.decodeIfPresent(AccountIdentity.self, forKey: .identity)
+        customShortName = try c.decodeIfPresent(String.self, forKey: .customShortName)
         if let custom = try c.decodeIfPresent(String.self, forKey: .customDisplayName) {
             customDisplayName = custom
         } else if let legacy = try c.decodeIfPresent(String.self, forKey: .displayName) {
@@ -251,6 +268,7 @@ struct AIAccount: Codable, Equatable, Identifiable {
         try c.encode(provider, forKey: .provider)
         try c.encodeIfPresent(customDisplayName, forKey: .customDisplayName)
         try c.encodeIfPresent(identity, forKey: .identity)
+        try c.encodeIfPresent(customShortName, forKey: .customShortName)
         try c.encode(enabled, forKey: .enabled)
         try c.encode(order, forKey: .order)
         try c.encode(credentialSource, forKey: .credentialSource)

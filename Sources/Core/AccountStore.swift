@@ -105,10 +105,22 @@ final class AccountStore {
         save()
     }
 
-    /// Record who an account belongs to, leaving everything else alone.
+    /// Record who an account belongs to, leaving everything else alone. A short
+    /// name the user typed is never disturbed — only the derived one changes,
+    /// and that is computed rather than stored.
     func setIdentity(_ identity: AccountIdentity, id: UUID) {
         guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
         accounts[i].identity = identity
+        save()
+    }
+
+    /// Set the menu bar alias. An empty string clears the override, so the
+    /// account goes back to the alias derived from its identity.
+    func setShortName(_ name: String?, id: UUID) {
+        guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        accounts[i].customShortName = trimmed.isEmpty ? nil
+            : String(trimmed.prefix(ShortName.maximumLength))
         save()
     }
 

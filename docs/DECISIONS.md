@@ -303,3 +303,59 @@ does not name its account, it costs one profile call on the failure path.
 **Reason.** Adopting an unverified credential would repoint an account at someone
 else's usage without saying so. The cost of being strict is an occasional manual
 reconnect; the cost of being loose is a dashboard that quietly lies.
+
+
+---
+
+## 16. Two separate settings, because "Minimal" meant two different things
+
+**Problem.** The menu bar settings had one list — Compact, Provider, Minimal —
+that conflated *what the title is about* with *how wide each label is*. Adding
+three per-account widths, one of which is also called minimal, would have given
+the app two different settings both offering "Minimal".
+
+**Decision.** Split them. **Menu Bar Summary** is Per Account / Provider /
+Icon Only. **Per-account format** is Detailed / Compact / Minimal Labels, and is
+disabled unless the summary is Per Account.
+
+**Reason.** They are genuinely different questions, and naming them as one list
+is what made people guess. "Icon Only" also says what it does, which "Minimal"
+never did.
+
+**Consequences.** Stored preferences migrate: `compact` becomes `perAccount`,
+`minimal` becomes `iconOnly`. Existing users land on Per Account + Detailed,
+which is the intended default.
+
+---
+
+## 17. Abbreviation is computed, not configured
+
+**Problem.** Compact and Minimal formats need short labels, and short labels
+collide.
+
+**Decision.** A generic shortest-unique-prefix algorithm, grouped by whatever
+already disambiguates the rendered label — the provider initial in Compact,
+nothing in Minimal Labels.
+
+**Reason.** Hard-coding abbreviations for the four accounts this was designed
+around would break for the fifth. The algorithm expands a name only as far as it
+must, is deterministic so the menu bar does not reshuffle between refreshes, and
+numbers genuinely identical aliases rather than rendering two accounts
+indistinguishably — an ambiguous menu bar is worse than an ugly one.
+
+---
+
+## 18. The menu bar keeps account order, and shows aliases rather than addresses
+
+**Problem.** Should the menu bar sort by usage, so the busiest account leads?
+And should it show the identity it worked so hard to confirm?
+
+**Decision.** No to both. Order follows the user's arrangement; labels are short
+aliases.
+
+**Reason.** A menu bar is read positionally — you learn where your accounts sit
+and glance at that spot. Re-sorting by usage would move them exactly when
+something changed, which is when you most need to find them. And a row of
+e-mail addresses in the menu bar is unreadable at that size and visible to
+anyone near the screen; the dropdown carries the full identity, which is where
+identity matters.
