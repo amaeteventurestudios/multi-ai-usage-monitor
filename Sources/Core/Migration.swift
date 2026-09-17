@@ -40,9 +40,7 @@ struct LegacySettingsSnapshot: Equatable {
 /// probed inside the migration so the logic is testable without credentials.
 struct DetectedCredentials {
     var claudeCodeKeychain: Bool
-    var claudeSuggestedName: String?
     var codexDefault: Bool
-    var codexSuggestedName: String?
 }
 
 /// Turns "one provider, one credential" into "accounts".
@@ -53,6 +51,11 @@ struct DetectedCredentials {
 /// reset timestamps, so baking a weekday and hour into everyone's migrated
 /// configuration would be inventing a fact. Per-account reset rules are there
 /// for people whose provider stays silent — set in the account editor, not here.
+///
+/// It also gives the accounts no name and no identity. Naming happens once the
+/// provider has been asked who the credential belongs to, which the coordinator
+/// does on first launch — so a migrated account ends up called
+/// "Claude (you@example.com)" rather than carrying a counter forever.
 enum LegacyMigration {
 
     static func accounts(legacy: LegacySettingsSnapshot?,
@@ -67,7 +70,6 @@ enum LegacyMigration {
         }()
         if let source = claudeSource {
             out.append(AIAccount(provider: .claude,
-                                 displayName: detected.claudeSuggestedName ?? "Claude Account 1",
                                  enabled: legacy?.anthropicEnabled ?? true,
                                  order: out.count,
                                  credentialSource: source))
@@ -79,7 +81,6 @@ enum LegacyMigration {
         }()
         if let source = openAISource {
             out.append(AIAccount(provider: .openAI,
-                                 displayName: detected.codexSuggestedName ?? "OpenAI Account 1",
                                  enabled: legacy?.openAIEnabled ?? true,
                                  order: out.count,
                                  credentialSource: source))
