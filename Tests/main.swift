@@ -11,5 +11,6 @@ runIdentityTests()
 runParsingTests()
 runBehaviourTests()
 runPresentationTests()
+runMenuFormatTests()
 
 exit(TestRunner.shared.summary())

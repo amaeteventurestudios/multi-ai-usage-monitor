@@ -121,6 +121,41 @@ Intel x86_64**.
 - [ ] The account editor and the onboarding sheet use the same opacity
 - [ ] The chosen opacity is still in effect after quitting and relaunching
 - [ ] Each menu bar summary mode shows a sentence explaining what will appear
+- [ ] The per-account format picker offers Detailed, Compact and Minimal Labels,
+      each with a description, and the live preview updates as you change it
+- [ ] The format picker is disabled unless the summary mode is Per Account
+
+## Menu bar formats
+
+With four accounts (Claude Amaete, Claude StarLogic, OpenAI Business,
+OpenAI Personal):
+
+- [ ] Detailed reads `C Amaete 57% · C StarLogic 22% · G Business 90% · G Personal 41%`
+- [ ] Compact reads `C-A 57% · C-S 22% · G-B 90% · G-P 41%`
+- [ ] Minimal Labels reads `A 57% · S 22% · B 90% · P 41%`
+- [ ] Changing the format takes effect immediately, with no restart
+- [ ] The format survives quitting and relaunching
+- [ ] Account order in the menu bar matches the order in Settings, and does not
+      re-sort itself by usage
+- [ ] Percentages match the dropdown, and are usage *used*
+- [ ] An account that cannot refresh shows `!` in its place, in every format
+- [ ] Editing an account's **Menu Bar Name** updates the menu bar immediately
+- [ ] Two accounts with aliases sharing a first letter are disambiguated
+      (e.g. `Business` and `Beta` become `G-Bu` and `G-Be`)
+- [ ] No e-mail address appears in the menu bar in any format
+
+## OpenAI Business and Personal
+
+- [ ] Business is saved and reporting
+- [ ] Switch the ChatGPT app / `codex login` to the Personal account
+- [ ] **+ Add OpenAI Account** shows the *Personal* account's e-mail and plan
+      before anything is saved — press Check Again if it still shows Business
+- [ ] Saving creates a second account; Business is untouched
+- [ ] Both appear in the dropdown with their own identities
+- [ ] Quit and relaunch: both remain
+- [ ] Switch the active Codex/OpenAI login back to Business, refresh: Personal
+      still reports from its own captured credential
+- [ ] Adding Business again is refused with "already added"
 - [ ] Removing an account asks for confirmation first
 - [ ] Settings survive quitting and relaunching the app
 - [ ] Accounts, their order and their reset rules survive a relaunch

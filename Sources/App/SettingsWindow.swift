@@ -33,6 +33,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var opacitySlider: NSSlider!
     private var opacityValueLabel: NSTextField!
     private var summaryModeExplanation: NSTextField!
+    private var formatPopup: NSPopUpButton!
+    private var formatExplanation: NSTextField!
+    private var previewLabel: NSTextField!
     private var editor: AccountEditorController?
     private var onboarding: AccountOnboardingController?
 
@@ -54,6 +57,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     func show(tab: Tab = .accounts) {
         reloadAccounts()
         refreshLastRefreshLabel()
+        updateFormatControls()
         applyBackgroundOpacity()
         tabView.selectTabViewItem(at: tab.rawValue)
         NSApp.activate(ignoringOtherApps: true)
@@ -405,6 +409,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         popup.target = self
         popup.action = #selector(summaryModeChanged(_:))
 
+        summaryModeExplanation = label(settings.menuBarSummaryMode.explanation,
+                                       size: 11, color: .secondaryLabelColor, wrapWidth: 480)
+
+        formatPopup = NSPopUpButton()
+        for format in PerAccountFormat.allCases { formatPopup.addItem(withTitle: format.displayName) }
+        formatPopup.selectItem(at: PerAccountFormat.allCases.firstIndex(of: settings.perAccountFormat) ?? 0)
+        formatPopup.target = self
+        formatPopup.action = #selector(perAccountFormatChanged(_:))
+
+        formatExplanation = label(settings.perAccountFormat.explanation,
+                                  size: 11, color: .secondaryLabelColor, wrapWidth: 480)
+
+        previewLabel = label("", size: 12)
+        previewLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        previewLabel.lineBreakMode = .byTruncatingTail
+
         func check(_ title: String, _ value: Bool, _ action: Selector) -> NSButton {
             let b = NSButton(checkboxWithTitle: title, target: self, action: action)
             b.state = value ? .on : .off
@@ -422,22 +442,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         opacitySlider.translatesAutoresizingMaskIntoConstraints = false
         opacitySlider.widthAnchor.constraint(equalToConstant: 240).isActive = true
 
-        summaryModeExplanation = label(settings.menuBarSummaryMode.explanation,
-                                       size: 11, color: .secondaryLabelColor, wrapWidth: 480)
-
         opacityValueLabel = label(opacityCaption(), size: 12)
-        opacityValueLabel.alignment = .right
-        opacityValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        opacityValueLabel.translatesAutoresizingMaskIntoConstraints = false
-        opacityValueLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
 
-        return vstack([
+        let body = vstack([
             label("Menu Bar Summary", size: 13, bold: true),
             popup,
             summaryModeExplanation,
+
+            label("Per-account menu bar format", size: 13, bold: true),
+            formatPopup,
+            formatExplanation,
+
+            label("Preview", size: 11, color: .secondaryLabelColor),
+            previewLabel,
+
             check("Show percentages", settings.showPercentages, #selector(toggleShowPercentages(_:))),
-            check("Show short account badges instead of provider names",
-                  settings.showProviderBadges, #selector(toggleShowBadges(_:))),
             check("Show reset countdown in the dropdown",
                   settings.showResetCountdown, #selector(toggleShowCountdown(_:))),
             check("Menu bar shows only the highest usage",
@@ -454,8 +473,73 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                 + "Higher is more solid — and darker in Dark Mode; lower lets the desktop "
                 + "show through. 100% is completely solid.",
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480),
-        ])
+        ], spacing: 8)
+
+        updateFormatControls()
+        return body
     }
+
+    /// Show what the menu bar will actually say, using the real accounts where
+    /// there is data and a worked example otherwise, so the choice can be made
+    /// by looking rather than by imagining.
+    private func previewText() -> String {
+        var entries = MenuBarSummary.entries(accounts: store.accounts, states: coordinator.states)
+        if entries.isEmpty {
+            entries = [
+                .init(badge: "C", providerName: "Claude", shortName: "Amaete",
+                      usedPercent: 57, hasError: false),
+                .init(badge: "C", providerName: "Claude", shortName: "Starlogic",
+                      usedPercent: 22, hasError: false),
+                .init(badge: "G", providerName: "OpenAI", shortName: "Business",
+                      usedPercent: 90, hasError: false),
+                .init(badge: "G", providerName: "OpenAI", shortName: "Personal",
+                      usedPercent: 41, hasError: false),
+            ]
+        } else if entries.allSatisfy({ $0.usedPercent == nil && !$0.hasError }) {
+            // Configured, but nothing fetched yet: stand in example numbers so
+            // the shape of the label is still visible.
+            entries = entries.enumerated().map { index, e in
+                .init(badge: e.badge, providerName: e.providerName, shortName: e.shortName,
+                      usedPercent: Double(20 + index * 17), hasError: false)
+            }
+        }
+        return MenuBarSummary.title(entries: entries,
+                                    mode: settings.menuBarSummaryMode,
+                                    format: settings.perAccountFormat,
+                                    showPercentages: settings.showPercentages,
+                                    onlyHighest: settings.onlyHighestInMenuBar)
+            ?? "AI"
+    }
+
+    /// The format picker only means anything in per-account mode.
+    private func updateFormatControls() {
+        let perAccount = settings.menuBarSummaryMode == .perAccount
+        formatPopup?.isEnabled = perAccount
+        formatExplanation?.textColor = perAccount ? .secondaryLabelColor : .tertiaryLabelColor
+        formatExplanation?.stringValue = perAccount
+            ? settings.perAccountFormat.explanation
+            : "Only used when the summary above is set to Per Account."
+        previewLabel?.stringValue = previewText()
+    }
+
+    @objc private func summaryModeChanged(_ sender: NSPopUpButton) {
+        let idx = min(max(0, sender.indexOfSelectedItem), MenuBarSummaryMode.allCases.count - 1)
+        settings.menuBarSummaryMode = MenuBarSummaryMode.allCases[idx]
+        // Say what the chosen mode will actually put in the menu bar, rather
+        // than leaving three one-word names to be guessed at.
+        summaryModeExplanation?.stringValue = settings.menuBarSummaryMode.explanation
+        updateFormatControls()
+        onChange?()
+    }
+
+    @objc private func perAccountFormatChanged(_ sender: NSPopUpButton) {
+        let idx = min(max(0, sender.indexOfSelectedItem), PerAccountFormat.allCases.count - 1)
+        settings.perAccountFormat = PerAccountFormat.allCases[idx]
+        updateFormatControls()
+        onChange?()
+    }
+
+    // MARK: - Background opacity
 
     /// Push the current setting to every window this app owns.
     private func applyBackgroundOpacity() {
@@ -475,19 +559,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // Immediate, with no restart and no reopening the window.
         applyBackgroundOpacity()
     }
-
-    @objc private func summaryModeChanged(_ sender: NSPopUpButton) {
-        let idx = min(max(0, sender.indexOfSelectedItem), MenuBarSummaryMode.allCases.count - 1)
-        settings.menuBarSummaryMode = MenuBarSummaryMode.allCases[idx]
-        // Say what the chosen mode will actually put in the menu bar, rather
-        // than leaving three one-word names to be guessed at.
-        summaryModeExplanation?.stringValue = settings.menuBarSummaryMode.explanation
-        onChange?()
+    @objc private func toggleShowPercentages(_ s: NSButton) {
+        settings.showPercentages = s.state == .on
+        updateFormatControls(); onChange?()
     }
-    @objc private func toggleShowPercentages(_ s: NSButton) { settings.showPercentages = s.state == .on; onChange?() }
-    @objc private func toggleShowBadges(_ s: NSButton) { settings.showProviderBadges = s.state == .on; onChange?() }
-    @objc private func toggleShowCountdown(_ s: NSButton) { settings.showResetCountdown = s.state == .on; onChange?() }
-    @objc private func toggleOnlyHighest(_ s: NSButton) { settings.onlyHighestInMenuBar = s.state == .on; onChange?() }
+    @objc private func toggleShowCountdown(_ s: NSButton) {
+        settings.showResetCountdown = s.state == .on; onChange?()
+    }
+    @objc private func toggleOnlyHighest(_ s: NSButton) {
+        settings.onlyHighestInMenuBar = s.state == .on
+        updateFormatControls(); onChange?()
+    }
 
     // MARK: - Notifications tab
 

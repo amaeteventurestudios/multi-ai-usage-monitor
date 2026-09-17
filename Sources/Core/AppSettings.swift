@@ -1,32 +1,80 @@
 import Foundation
 
-/// How much the menu bar title says.
+/// What the menu bar title is *about*: every account, one figure per provider,
+/// or nothing but a marker.
+///
+/// Deliberately separate from `PerAccountFormat`, which decides how wide each
+/// account's label is. The two used to be tangled together under one set of
+/// names that included two different things called "Minimal".
 enum MenuBarSummaryMode: String, CaseIterable, Codable {
-    /// Every enabled account: "C1 12% · C2 43% · G1 88%".
-    case compact
-    /// Worst account per provider: "Claude 43% · OpenAI 88%".
+    /// Every enabled account, laid out according to `PerAccountFormat`.
+    case perAccount
+    /// The highest usage for each provider: "Claude 43% · OpenAI 88%".
     case provider
     /// Just a marker: "AI".
-    case minimal
+    case iconOnly
 
     var displayName: String {
         switch self {
-        case .compact:  return "Compact — show each account"
-        case .provider: return "Provider — highest usage per provider"
-        case .minimal:  return "Minimal — just a marker"
+        case .perAccount: return "Per Account — show every account"
+        case .provider:   return "Provider — highest usage per provider"
+        case .iconOnly:   return "Icon Only — just “AI”"
         }
     }
 
-    /// A sentence saying what will actually appear in the menu bar, because the
-    /// mode names alone left people guessing.
     var explanation: String {
         switch self {
-        case .compact:
-            return "One short badge per enabled account, e.g. “C1 12% · C2 43% · G 88%”."
+        case .perAccount:
+            return "One label per enabled account, in the order you arranged them. "
+                 + "Choose how wide those labels are below."
         case .provider:
-            return "The highest current usage for each provider, e.g. “Claude 43% · OpenAI 88%”."
-        case .minimal:
+            return "Shows the highest current usage for each provider, "
+                 + "e.g. “Claude 43% · OpenAI 88%”."
+        case .iconOnly:
             return "Just “AI”, with an exclamation mark if an account needs attention."
+        }
+    }
+
+    /// Preferences written before these modes were separated.
+    static func migrating(from raw: String) -> MenuBarSummaryMode? {
+        switch raw {
+        case "compact": return .perAccount
+        case "minimal": return .iconOnly
+        default: return MenuBarSummaryMode(rawValue: raw)
+        }
+    }
+}
+
+/// How wide each account's menu bar label is, when the summary mode is
+/// per-account.
+///
+/// The right answer depends on the screen, the notch and how many other status
+/// items are up there, none of which the app can judge for somebody — so this
+/// is a choice, not an automatic guess.
+enum PerAccountFormat: String, CaseIterable, Codable {
+    /// "C Amaete 57% · C StarLogic 22%"
+    case detailed
+    /// "C-A 57% · C-S 22%"
+    case compact
+    /// "A 57% · S 22%"
+    case minimalLabels
+
+    var displayName: String {
+        switch self {
+        case .detailed:      return "Detailed"
+        case .compact:       return "Compact"
+        case .minimalLabels: return "Minimal Labels"
+        }
+    }
+
+    var explanation: String {
+        switch self {
+        case .detailed:
+            return "Shows provider and account names. Best for large displays."
+        case .compact:
+            return "Uses provider and account abbreviations to save space."
+        case .minimalLabels:
+            return "Shows only short account labels and usage. Best for laptops."
         }
     }
 }
@@ -65,9 +113,9 @@ final class AppSettings {
         static let refreshMinutes = "refresh.intervalMinutes"   // 0 == manual only
         static let summaryMode = "display.summaryMode"
         static let showPercentages = "display.showPercentages"
-        static let showBadges = "display.showProviderBadges"
         static let showCountdown = "display.showResetCountdown"
         static let onlyHighest = "display.onlyHighestInMenuBar"
+        static let perAccountFormat = "display.perAccountFormat"
         static let backgroundOpacity = "display.backgroundOpacity"
         static let usageWarnings = "notifications.usageWarningsEnabled"
         static let warningThreshold = "notifications.warningThresholdPercent"
@@ -80,9 +128,9 @@ final class AppSettings {
     private func registerDefaults() {
         d.register(defaults: [
             Key.refreshMinutes: 5,
-            Key.summaryMode: MenuBarSummaryMode.compact.rawValue,
+            Key.summaryMode: MenuBarSummaryMode.perAccount.rawValue,
+            Key.perAccountFormat: PerAccountFormat.detailed.rawValue,
             Key.showPercentages: true,
-            Key.showBadges: true,
             Key.showCountdown: true,
             Key.onlyHighest: false,
             Key.backgroundOpacity: AppSettings.defaultBackgroundOpacity,
@@ -111,17 +159,19 @@ final class AppSettings {
     var refreshInterval: TimeInterval? { refreshIntervalMinutes.map { TimeInterval($0 * 60) } }
 
     var menuBarSummaryMode: MenuBarSummaryMode {
-        get { MenuBarSummaryMode(rawValue: d.string(forKey: Key.summaryMode) ?? "") ?? .compact }
+        get { MenuBarSummaryMode.migrating(from: d.string(forKey: Key.summaryMode) ?? "")
+                ?? .perAccount }
         set { d.set(newValue.rawValue, forKey: Key.summaryMode) }
+    }
+
+    var perAccountFormat: PerAccountFormat {
+        get { PerAccountFormat(rawValue: d.string(forKey: Key.perAccountFormat) ?? "") ?? .detailed }
+        set { d.set(newValue.rawValue, forKey: Key.perAccountFormat) }
     }
 
     var showPercentages: Bool {
         get { d.bool(forKey: Key.showPercentages) }
         set { d.set(newValue, forKey: Key.showPercentages) }
-    }
-    var showProviderBadges: Bool {
-        get { d.bool(forKey: Key.showBadges) }
-        set { d.set(newValue, forKey: Key.showBadges) }
     }
     var showResetCountdown: Bool {
         get { d.bool(forKey: Key.showCountdown) }
@@ -174,8 +224,9 @@ final class AppSettings {
     /// Advanced → "Reset local settings". Accounts and notification state are
     /// cleared by their own stores; this only touches preferences.
     func resetToDefaults() {
-        for key in [Key.refreshMinutes, Key.summaryMode, Key.showPercentages, Key.showBadges,
+        for key in [Key.refreshMinutes, Key.summaryMode, Key.showPercentages,
                     Key.showCountdown, Key.onlyHighest, Key.backgroundOpacity,
+                    Key.perAccountFormat,
                     Key.usageWarnings, Key.warningThreshold,
                     Key.authWarnings, Key.debugLogging, Key.includeIdentities] {
             d.removeObject(forKey: key)
