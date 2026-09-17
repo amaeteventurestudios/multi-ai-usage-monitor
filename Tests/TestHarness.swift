@@ -121,13 +121,22 @@ func fixture(_ name: String) -> [String: Any] {
 }
 
 func makeAccount(_ provider: ProviderKind = .claude,
-                 name: String = "Test Account",
+                 name: String? = nil,
+                 email: String? = nil,
                  weekly: WeeklyResetRule? = nil,
                  preferProvider: Bool = true,
                  threshold: Int? = nil) -> AIAccount {
     AIAccount(provider: provider,
-              displayName: name,
+              customDisplayName: name,
+              identity: email.map { makeIdentity(email: $0) },
               credentialSource: provider == .claude ? .claudeCodeKeychain : .codexDefault,
               resetOverrides: ResetOverrides(preferProviderReset: preferProvider, weekly: weekly),
               notificationThresholdPercent: threshold)
+}
+
+func makeIdentity(email: String? = nil,
+                  accountID: String? = nil,
+                  plan: String? = nil,
+                  verified: Bool = true) -> AccountIdentity {
+    AccountIdentity(email: email, providerAccountID: accountID, planLabel: plan, verified: verified)
 }

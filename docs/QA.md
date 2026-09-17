@@ -36,16 +36,44 @@ Intel x86_64**.
 - [ ] The OpenAI weekly row is named `Codex Weekly`, not `ChatGPT Weekly`
 - [ ] Reset times shown match what the provider reports
 
-## Multiple accounts
+## Onboarding and identity
 
-- [ ] A second Claude account can be added with an imported credential
-- [ ] Adding it does not change the first account's credential source
+- [ ] "+ Add Claude Account" opens a guided flow, not a form full of Keychain
+      and JSON questions
+- [ ] The flow detects the account and shows its e-mail and plan before saving
+- [ ] The saved account is named `Claude (your-address@example.com)`
+- [ ] "+ Add OpenAI Account" detects the e-mail *and* the plan, and saves as
+      `OpenAI — <Plan> (your-address@example.com)`
+- [ ] Adding an account that is already saved is refused by name
+- [ ] Cancelling at any step saves nothing
+
+## Multiple accounts and persistence
+
+- [ ] Sign Claude Code in to a second account, add it: both accounts now appear
+- [ ] Adding the second does not change the first account's credential or name
 - [ ] Both Claude accounts appear in the dropdown with distinct names and badges
       (`C1`, `C2`)
+- [ ] Quit and relaunch the app: both accounts are still there, still named,
+      still reporting
+- [ ] **Close every browser profile you signed in with**: both accounts keep
+      reporting
+- [ ] Sign Claude Code out entirely: saved accounts keep reporting from their own
+      captured credentials
+- [ ] Restart the Mac: accounts, names, order and reset rules all survive
 - [ ] An OpenAI account pointed at a custom `auth.json` path works alongside the
       default one
-- [ ] Selecting a custom path for one OpenAI account leaves the other's alone
 - [ ] Badges disappear (`C` not `C1`) when a provider has only one account
+
+## Reconnect
+
+- [ ] An account whose credential has expired shows "Reconnect required", and
+      keeps its last numbers
+- [ ] Reconnect on that account opens the same guided flow
+- [ ] After reconnecting, the display name, reset rule, position, threshold and
+      enabled state are all unchanged
+- [ ] Reconnecting an account with a *different* account's credential is refused
+      and explains why
+- [ ] Reconnecting one account leaves every other account untouched
 
 ## Reset schedules
 
@@ -85,12 +113,14 @@ Intel x86_64**.
 - [ ] Disabling an account removes it from the dropdown and the menu bar
 - [ ] Move Up / Move Down reorders the dropdown and the menu bar
 - [ ] Each menu bar summary mode renders as described
-- [ ] The Display tab's background opacity slider changes the settings window
-      immediately as it is dragged, and the percentage beside it tracks the thumb
-- [ ] At 100% the window is fully solid; at 60% the desktop shows through and the
+- [ ] The Display tab's background opacity slider runs 70% to 100%, defaults to
+      95%, changes the settings window immediately as it is dragged, and the
+      "Current: N%" caption tracks the thumb
+- [ ] At 100% the window is fully solid; at 70% the desktop shows through and the
       text is still comfortably readable, in both Light and Dark Mode
-- [ ] An account editor sheet opened afterwards uses the same opacity
+- [ ] The account editor and the onboarding sheet use the same opacity
 - [ ] The chosen opacity is still in effect after quitting and relaunching
+- [ ] Each menu bar summary mode shows a sentence explaining what will appear
 - [ ] Removing an account asks for confirmation first
 - [ ] Settings survive quitting and relaunching the app
 - [ ] Accounts, their order and their reset rules survive a relaunch

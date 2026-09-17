@@ -11,9 +11,22 @@ enum MenuBarSummaryMode: String, CaseIterable, Codable {
 
     var displayName: String {
         switch self {
-        case .compact:  return "Compact (per account)"
-        case .provider: return "Provider (worst per provider)"
-        case .minimal:  return "Minimal"
+        case .compact:  return "Compact — show each account"
+        case .provider: return "Provider — highest usage per provider"
+        case .minimal:  return "Minimal — just a marker"
+        }
+    }
+
+    /// A sentence saying what will actually appear in the menu bar, because the
+    /// mode names alone left people guessing.
+    var explanation: String {
+        switch self {
+        case .compact:
+            return "One short badge per enabled account, e.g. “C1 12% · C2 43% · G 88%”."
+        case .provider:
+            return "The highest current usage for each provider, e.g. “Claude 43% · OpenAI 88%”."
+        case .minimal:
+            return "Just “AI”, with an exclamation mark if an account needs attention."
         }
     }
 }
@@ -27,14 +40,14 @@ final class AppSettings {
 
     /// How solid the app's own windows are drawn, as a fraction.
     ///
-    /// 1.0 is a completely solid window; lower values let the desktop show
-    /// through. The floor is deliberately well above zero: below roughly 0.6 the
-    /// text in a settings pane starts competing with whatever is behind it, and
-    /// a preference that can make the app unreadable is not a preference worth
-    /// offering.
-    static let minimumBackgroundOpacity = 0.60
+    /// 1.0 is a completely solid window — in Dark Mode, a properly dark panel;
+    /// lower values let the desktop show through and lighten it. The floor is
+    /// deliberately high: below about 0.7 the text starts competing with
+    /// whatever is behind it, and a preference that can make the app unreadable
+    /// is not a preference worth offering.
+    static let minimumBackgroundOpacity = 0.70
     static let maximumBackgroundOpacity = 1.00
-    static let defaultBackgroundOpacity = 0.90
+    static let defaultBackgroundOpacity = 0.95
 
     static func clampBackgroundOpacity(_ value: Double) -> Double {
         guard value.isFinite else { return defaultBackgroundOpacity }

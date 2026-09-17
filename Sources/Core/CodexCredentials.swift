@@ -11,6 +11,9 @@ struct CodexAuth: Equatable {
     let accessToken: String
     let accountId: String?
     let expiresAt: Date?
+    /// Identity claims read out of the id token, when one is present.
+    var email: String?
+    var planRaw: String?
 
     var isExpired: Bool {
         guard let e = expiresAt else { return false }   // unknown expiry: try anyway
@@ -38,39 +41,73 @@ enum CodexCredentialStore {
     }
 
     static func read(source: CredentialSource) -> CodexAuth? {
-        guard let path = path(for: source),
-              let data = FileManager.default.contents(atPath: path) else { return nil }
+        guard let data = rawCredential(source: source) else { return nil }
         return parse(data: data)
+    }
+
+    /// The credential document itself, from wherever this account keeps it: a
+    /// file another tool owns, or a copy imported into this app's Keychain
+    /// entry. Kept private to this type — callers get parsed fields, never the
+    /// raw document.
+    static func rawCredential(source: CredentialSource) -> Data? {
+        switch source {
+        case .codexDefault, .file:
+            guard let path = path(for: source) else { return nil }
+            return FileManager.default.contents(atPath: path)
+        case .appKeychain(let id):
+            return Keychain.read(service: AppInfo.appKeychainService, account: id)
+                .map { Data($0.utf8) }
+        case .claudeCodeKeychain:
+            return nil
+        }
     }
 
     static func parse(data: Data) -> CodexAuth? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tokens = obj["tokens"] as? [String: Any],
               let access = tokens["access_token"] as? String, !access.isEmpty else { return nil }
-        return CodexAuth(accessToken: access,
-                         accountId: tokens["account_id"] as? String,
-                         expiresAt: jwtExpiry(access))
+        var auth = CodexAuth(accessToken: access,
+                             accountId: tokens["account_id"] as? String,
+                             expiresAt: jwtExpiry(access))
+        if let idToken = tokens["id_token"] as? String, let claims = jwtClaims(idToken) {
+            auth.email = claims["email"] as? String
+            if let openAIAuth = claims["https://api.openai.com/auth"] as? [String: Any] {
+                auth.planRaw = openAIAuth["chatgpt_plan_type"] as? String
+            }
+        }
+        return auth
     }
 
     /// Non-secret metadata for the settings pane: the plan and e-mail recorded
     /// on the credential, when present. Used to suggest a display name for a
     /// newly added account so the user does not have to invent one.
     static func identityHint(source: CredentialSource) -> (email: String?, plan: String?) {
-        guard let path = path(for: source),
-              let data = FileManager.default.contents(atPath: path),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let tokens = obj["tokens"] as? [String: Any],
-              let idToken = tokens["id_token"] as? String,
-              let claims = jwtClaims(idToken) else { return (nil, nil) }
-        let email = claims["email"] as? String
-        var plan: String?
-        if let auth = claims["https://api.openai.com/auth"] as? [String: Any] {
-            plan = auth["chatgpt_plan_type"] as? String
-        }
-        return (email, plan)
+        guard let auth = read(source: source) else { return (nil, nil) }
+        return (auth.email, auth.planRaw)
+    }
+
+    /// Store a copy of a credential document under this app's own Keychain
+    /// service, so the account no longer depends on whichever account Codex is
+    /// currently signed in to.
+    @discardableResult
+    static func capture(from source: CredentialSource, forAccountID id: UUID) -> Bool {
+        guard let data = rawCredential(source: source),
+              parse(data: data) != nil,
+              let object = try? JSONSerialization.jsonObject(with: data),
+              // Re-serialised compactly: a pretty-printed document would come
+              // back from `security` hex-encoded, and there is no reason to
+              // store the newlines.
+              let compact = try? JSONSerialization.data(withJSONObject: object),
+              let text = String(data: compact, encoding: .utf8) else { return false }
+        return Keychain.write(service: AppInfo.appKeychainService, account: id.uuidString,
+                              value: text, label: "\(AppInfo.name) credential")
     }
 
     static func status(of source: CredentialSource) -> CredentialStatus {
+        if case .appKeychain = source {
+            guard let auth = read(source: source) else { return .missing }
+            return auth.isExpired ? .expired : .detected
+        }
         guard let path = path(for: source) else { return .invalid }
         guard FileManager.default.fileExists(atPath: path) else { return .missing }
         guard FileManager.default.isReadableFile(atPath: path) else { return .unreadable }

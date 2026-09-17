@@ -23,6 +23,9 @@ final class UsageCoordinator {
     /// start a second request for the same account.
     private var inFlight: Set<UUID> = []
     private var backoffAttempt: [UUID: Int] = [:]
+    /// Accounts we have already tried to recover silently since their last
+    /// success, so one failing account cannot loop between adopt and retry.
+    private var silentReconnectTried: Set<UUID> = []
     private var retryWork: [UUID: DispatchWorkItem] = [:]
 
     private var pollTimer: Timer?
@@ -42,8 +45,31 @@ final class UsageCoordinator {
 
     func start() {
         refreshCredentialStatuses()
+        refreshIdentities()
         refreshAll()
         restartTimers()
+    }
+
+    /// Ask each provider who its accounts belong to, for any account we have
+    /// not identified yet.
+    ///
+    /// This is what turns an account carried over from an earlier version —
+    /// which had no identity at all — into "Claude (you@example.com)" without
+    /// the user doing anything.
+    func refreshIdentities() {
+        for account in store.accounts where !account.isIdentified {
+            ProviderRegistry.provider(for: account.provider)
+                .discoverIdentity(source: account.credentialSource) { [weak self] result in
+                    guard let self = self, case .success(let identity) = result,
+                          identity.isIdentified else { return }
+                    DispatchQueue.main.async {
+                        guard self.store.account(id: account.id) != nil else { return }
+                        self.store.setIdentity(identity, id: account.id)
+                        Diagnostics.shared.info("identified a \(account.provider.rawValue) account")
+                        self.notifyChanged()
+                    }
+                }
+        }
     }
 
     func restartTimers() {
@@ -126,6 +152,7 @@ final class UsageCoordinator {
         switch result {
         case .success(let usage):
             backoffAttempt[account.id] = 0
+            silentReconnectTried.remove(account.id)
             retryWork[account.id]?.cancel()
             retryWork[account.id] = nil
 
@@ -143,22 +170,59 @@ final class UsageCoordinator {
 
         case .failure(let error):
             let accountError = (error as? AccountError) ?? HTTP.classify(error, provider: account.provider)
-            // The previous snapshot stays exactly where it is. A failed refresh
-            // costs the user the freshness of the number, never the number.
-            state.error = accountError
-            states[account.id] = state
-            credentialStatus[account.id] = ProviderRegistry.provider(for: account.provider)
-                .credentialStatus(for: account)
 
-            Diagnostics.shared.warning("account \(account.id) refresh failed: \(accountError.kind.rawValue)")
+            // Before telling anyone to reconnect, see whether the provider's own
+            // tool now holds a live credential for this same account. If it
+            // does, adopt it and try again — signing back in anywhere on this
+            // Mac then revives the account with no reconnect step at all.
+            let recoverable = accountError.kind == .expiredCredential
+                || accountError.kind == .authenticationFailed
+                || accountError.kind == .missingCredential
+            if recoverable, account.hasCapturedCredential, !silentReconnectTried.contains(account.id) {
+                silentReconnectTried.insert(account.id)
+                states[account.id] = state
+                ProviderRegistry.provider(for: account.provider)
+                    .silentReconnect(for: account) { [weak self] newSource in
+                        DispatchQueue.main.async {
+                            guard let self = self else { return }
+                            guard let newSource = newSource else {
+                                self.recordFailure(accountError, for: account)
+                                return
+                            }
+                            self.store.setCredentialSource(newSource, id: account.id)
+                            self.credentialStatus[account.id] = .detected
+                            if let updated = self.store.account(id: account.id) {
+                                self.refresh(updated)
+                            }
+                        }
+                    }
+                notifyChanged()
+                return
+            }
+            recordFailure(accountError, for: account)
+        }
+        notifyChanged()
+    }
 
-            if let alert = notifications.authAlert(for: account, error: accountError, settings: settings) {
-                NotificationPoster.post(alert)
-            }
-            if accountError.kind == .rateLimited || accountError.kind == .providerUnavailable {
-                let retryAfter = (error as? HTTPError)?.retryAfter
-                scheduleBackoffRetry(for: account, retryAfter: retryAfter)
-            }
+    /// Record an account-local failure, keeping whatever numbers that account
+    /// already had.
+    private func recordFailure(_ accountError: AccountError, for account: AIAccount) {
+        var state = states[account.id] ?? AccountRuntimeState()
+        state.isRefreshing = false
+        // The previous snapshot stays exactly where it is. A failed refresh
+        // costs the user the freshness of the number, never the number.
+        state.error = accountError
+        states[account.id] = state
+        credentialStatus[account.id] = ProviderRegistry.provider(for: account.provider)
+            .credentialStatus(for: account)
+
+        Diagnostics.shared.warning("account \(account.id) refresh failed: \(accountError.kind.rawValue)")
+
+        if let alert = notifications.authAlert(for: account, error: accountError, settings: settings) {
+            NotificationPoster.post(alert)
+        }
+        if accountError.kind == .rateLimited || accountError.kind == .providerUnavailable {
+            scheduleBackoffRetry(for: account, retryAfter: accountError.retryAfter)
         }
         notifyChanged()
     }
@@ -253,6 +317,85 @@ final class UsageCoordinator {
         return added
     }
 
+    /// Save an account that onboarding has just identified.
+    ///
+    /// The credential is copied into storage this app owns *before* the account
+    /// is saved, so a saved account is never left pointing at another tool's
+    /// single credential slot. If the copy fails, nothing is saved.
+    func saveOnboardedAccount(provider: ProviderKind,
+                              identity: AccountIdentity,
+                              source: CredentialSource,
+                              resetOverrides: ResetOverrides = ResetOverrides())
+        -> Result<AIAccount, AccountError> {
+
+        if let existing = store.existingAccount(provider: provider, identity: identity) {
+            return .failure(AccountError(
+                kind: .duplicateAccount,
+                message: "This account is already added as “\(existing.displayName)”.",
+                recovery: "Use Reconnect on that account if its credential needs refreshing."))
+        }
+
+        let id = UUID()
+        let adapter = ProviderRegistry.provider(for: provider)
+        let captured: CredentialSource
+        switch adapter.captureCredential(from: source, forAccountID: id) {
+        case .success(let s): captured = s
+        case .failure(let error): return .failure(error)
+        }
+
+        let account = AIAccount(id: id, provider: provider, identity: identity,
+                                credentialSource: captured, resetOverrides: resetOverrides)
+        let saved = store.add(account)
+        refreshCredentialStatuses()
+        refresh(saved)
+        Diagnostics.shared.info("saved a new \(provider.rawValue) account from onboarding")
+        return .success(saved)
+    }
+
+    /// Replace only an account's credential.
+    ///
+    /// The display name, reset rule, ordering, threshold and position are all
+    /// preserved — reconnecting is about the credential and nothing else. A
+    /// credential belonging to a *different* account is refused, since silently
+    /// repointing an account at someone else's usage would be the worst
+    /// possible outcome for a dashboard used to decide where to send work.
+    func reconnect(accountID: UUID,
+                   identity: AccountIdentity,
+                   source: CredentialSource) -> Result<AIAccount, AccountError> {
+        guard let account = store.account(id: accountID) else {
+            return .failure(AccountError(kind: .missingCredential, message: "That account no longer exists."))
+        }
+        if let known = account.identity, known.isIdentified, identity.isIdentified,
+           !known.matches(identity) {
+            return .failure(AccountError(
+                kind: .identityMismatch,
+                message: "That credential belongs to \(identity.email ?? "a different account"), "
+                       + "not to “\(account.displayName)”.",
+                recovery: "Sign in as the right account and try again, or add this one separately."))
+        }
+        if let clash = store.existingAccount(provider: account.provider, identity: identity,
+                                             excluding: accountID) {
+            return .failure(AccountError(
+                kind: .duplicateAccount,
+                message: "That credential belongs to “\(clash.displayName)”, which is already added."))
+        }
+
+        let adapter = ProviderRegistry.provider(for: account.provider)
+        switch adapter.captureCredential(from: source, forAccountID: accountID) {
+        case .failure(let error):
+            return .failure(error)
+        case .success(let captured):
+            store.setCredentialSource(captured, id: accountID)
+            if identity.isIdentified { store.setIdentity(identity, id: accountID) }
+            silentReconnectTried.remove(accountID)
+            states[accountID]?.error = nil
+            refreshCredentialStatuses()
+            if let updated = store.account(id: accountID) { refresh(updated) }
+            Diagnostics.shared.info("reconnected an account; only its credential changed")
+            return .success(store.account(id: accountID) ?? account)
+        }
+    }
+
     func updateAccount(_ account: AIAccount) {
         store.update(account)
         refreshCredentialStatuses()
@@ -267,10 +410,12 @@ final class UsageCoordinator {
     /// Removes an account, and with it only the credential copy this app owns.
     /// Claude Code's item and ~/.codex/auth.json are never touched.
     func removeAccount(id: UUID) {
-        if let account = store.account(id: id),
-           case .appKeychain = account.credentialSource {
-            ClaudeCredentialStore.deleteImportedCredential(forAccountID: id)
+        if let account = store.account(id: id) {
+            // Only ever a copy this app owns. Claude Code's item and
+            // ~/.codex/auth.json are never touched.
+            ProviderRegistry.provider(for: account.provider).discardCapturedCredential(forAccountID: id)
         }
+        silentReconnectTried.remove(id)
         retryWork[id]?.cancel()
         retryWork[id] = nil
         states[id] = nil

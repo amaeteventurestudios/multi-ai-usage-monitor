@@ -88,6 +88,12 @@ Quit                                              ⌘Q
 - **Multiple accounts per provider** — two Claude accounts and two OpenAI
   accounts side by side, each with its own credential, reset schedule, warning
   threshold and error state.
+- **Accounts name themselves.** Add an account and the provider is asked who it
+  belongs to, so the menu says `Claude (you@example.com)`, not "Claude 2".
+- **Add once, then forget about account switching.** Saving an account copies
+  its credential into this app's own Keychain entry, so you can sign a
+  different account into Claude Code or Codex — and close the browser profile
+  you used — and every saved account keeps reporting.
 - **Honest numbers.** Every percentage is *used*, and the word "used" is printed
   next to it. Nothing is estimated, extrapolated or counted locally and passed
   off as authoritative. An allowance the app cannot read says `Unavailable` and
@@ -103,8 +109,9 @@ Quit                                              ⌘Q
   per metric and per usage window, re-arming automatically after each reset.
 - **Three menu bar summary modes** — compact (`C1 12% · C2 43% · G 88%`),
   per provider (`Claude 43% · OpenAI 88%`), or minimal (`AI`).
-- **Background opacity control** — a slider from 60% to 100% for how solid the
-  app's windows are drawn, applied immediately and remembered between launches.
+- **Background opacity control** — a slider from 70% to 100% (default 95%) for
+  how solid the app's windows are drawn, applied immediately and remembered
+  between launches.
 - **No telemetry, no analytics, no backend, no account.**
 
 ## Supported providers
@@ -202,20 +209,20 @@ carrying across any settings from a previous installation.
 item. If not: *Accounts → + Add Claude Account*, choose
 *Claude Code credential (macOS Keychain)*, name it, save.
 
-**Second account** — Claude Code keeps only one credential at a time, so the
-second account needs its own copy:
+**First account** — sign in to it with Claude Code, then
+*Settings → Accounts → **+ Add Claude Account***. The flow confirms the
+credential with Anthropic, shows you which account it found, and saves it.
 
-1. Sign in to the second Claude account with Claude Code.
-2. Copy that account's credential JSON (the object containing `claudeAiOauth`)
-   out of the login Keychain.
-3. In *Settings → Accounts → + Add Claude Account*, choose
-   *Imported credential (this app's Keychain entry)* and use
-   **Import Credential…**. The value is typed into a secure field and written
-   straight to the Keychain.
-4. Sign Claude Code back in to whichever account you use day to day.
+**Second account** — Claude Code holds one credential at a time, so:
 
-From then on the two accounts read from different places and never overwrite
-each other.
+1. Sign Claude Code in to the second account.
+2. *Settings → Accounts → **+ Add Claude Account*** again. It detects the new
+   account and saves it alongside the first.
+3. Sign Claude Code back in to whichever account you use day to day.
+
+Both accounts keep reporting. Each one has its own credential copy in this
+app's Keychain entry, so neither can overwrite the other and neither depends on
+what Claude Code is signed in to now.
 
 ### Reset schedules
 
@@ -230,10 +237,19 @@ Mac's current time zone and follow daylight saving correctly.
 
 **Business/work account** — usually detected from `~/.codex/auth.json`.
 
-**Second (personal) account** — sign in with that account, copy the resulting
-`auth.json` somewhere else (for example `~/.codex-personal/auth.json`), then
-*+ Add OpenAI Account → Credential file at a custom path → Choose File…*. The
-file is validated when you pick it and only ever read.
+**Second (personal) account** — sign that account in with the ChatGPT app or
+`codex login`, then *+ Add OpenAI Account* again. The flow detects the new
+account's e-mail and plan and saves it separately.
+
+If you keep a second account's `auth.json` somewhere of your own, the flow's
+second option reads any path you choose. Either way the file is only ever read.
+
+One caveat specific to OpenAI: its access tokens are short-lived and this app
+deliberately does not renew them, because renewing would rotate the token the
+ChatGPT app and Codex depend on. A saved OpenAI account therefore shows
+"Reconnect required" once its captured token expires — but signing that account
+back in anywhere on this Mac revives it automatically, with no reconnect step.
+See [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
 
 ## Credential security
 

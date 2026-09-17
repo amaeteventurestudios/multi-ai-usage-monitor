@@ -56,13 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if legacy != nil { Diagnostics.shared.info("found settings from a previous installation") }
         LegacyMigration.apply(legacy: legacy, to: settings)
 
-        let claudeProvider = ProviderRegistry.claude
-        let openAIProvider = ProviderRegistry.openAI
+        // Names are not decided here. The coordinator asks each provider who
+        // the credential belongs to on first launch, so a carried-over account
+        // ends up named after its account rather than after a counter.
         let detected = DetectedCredentials(
             claudeCodeKeychain: ClaudeCredentialStore.read(source: .claudeCodeKeychain) != nil,
-            claudeSuggestedName: claudeProvider.suggestedDisplayName(for: .claudeCodeKeychain),
-            codexDefault: CodexCredentialStore.read(source: .codexDefault) != nil,
-            codexSuggestedName: openAIProvider.suggestedDisplayName(for: .codexDefault))
+            codexDefault: CodexCredentialStore.read(source: .codexDefault) != nil)
 
         let accounts = LegacyMigration.accounts(legacy: legacy, detected: detected)
         if !accounts.isEmpty {
@@ -141,9 +140,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             let state = coordinator.state(for: account)
             let status = coordinator.credentialStatus[account.id] ?? .missing
-            let subtitle = "\(store.badge(for: account)) · \(account.credentialSource.kindLabel) · \(status.displayName)"
+            // Badge, then whatever secondary metadata we actually know (plan,
+            // organisation), then the credential's health. The account's own
+            // name carries the identity, so it never needs repeating here.
+            var parts = [store.badge(for: account)]
+            if let subtitle = account.subtitle { parts.append(subtitle) }
+            parts.append(status == .detected ? "Live" : "Reconnect required")
             customView(AccountHeaderView(name: account.displayName,
-                                         subtitle: subtitle,
+                                         subtitle: parts.joined(separator: " · "),
                                          accent: accent(for: account.provider)))
 
             if let error = state.error {

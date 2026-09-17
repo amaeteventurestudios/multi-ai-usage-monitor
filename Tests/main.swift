@@ -7,6 +7,7 @@ print("Multi AI Usage Monitor — test suite")
 
 runResetScheduleTests()
 runAccountTests()
+runIdentityTests()
 runParsingTests()
 runBehaviourTests()
 runPresentationTests()

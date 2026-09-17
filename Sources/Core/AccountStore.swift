@@ -96,12 +96,40 @@ final class AccountStore {
         save()
     }
 
-    func rename(id: UUID, to name: String) {
+    /// Set a name the user typed. An empty string clears the override, so the
+    /// account goes back to being named after whoever it belongs to.
+    func rename(id: UUID, to name: String?) {
         guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        accounts[i].displayName = trimmed
+        let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        accounts[i].customDisplayName = trimmed.isEmpty ? nil : trimmed
         save()
+    }
+
+    /// Record who an account belongs to, leaving everything else alone.
+    func setIdentity(_ identity: AccountIdentity, id: UUID) {
+        guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+        accounts[i].identity = identity
+        save()
+    }
+
+    /// Replace only an account's credential reference. Used by Reconnect, which
+    /// must preserve the name, reset rule, ordering and notification settings.
+    func setCredentialSource(_ source: CredentialSource, id: UUID) {
+        guard let i = accounts.firstIndex(where: { $0.id == id }) else { return }
+        accounts[i].credentialSource = source
+        save()
+    }
+
+    /// An already-saved account with the same provider identity, if any. This is
+    /// what stops the same account being added twice.
+    func existingAccount(provider: ProviderKind,
+                         identity: AccountIdentity,
+                         excluding excludedID: UUID? = nil) -> AIAccount? {
+        accounts.first { account in
+            account.provider == provider
+                && account.id != excludedID
+                && (account.identity?.matches(identity) ?? false)
+        }
     }
 
     /// Reordering is expressed as "move one step", which is what the settings

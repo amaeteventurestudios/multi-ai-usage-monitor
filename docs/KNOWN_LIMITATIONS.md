@@ -38,28 +38,55 @@ does not invent a row for one it did not.
 
 ---
 
-## Claude does not name the account
+## Some plan tiers are named by family rather than in full
 
-**What.** A Claude account's display name defaults to something like
-`Claude (max)` rather than an e-mail address.
+**What.** An OpenAI account on `self_serve_business_prolite` is shown as
+"Business", not "Business Premium".
 
-**Why.** Neither the credential nor the usage endpoint identifies the account by
-e-mail; the credential records a plan. Rather than invent an identity, the app
-uses the plan as a starting label and lets you rename the account to whatever
-makes sense. OpenAI accounts *do* carry an e-mail and plan in the credential, so
-those get a more specific suggestion.
+**Why.** The plan *family* is unambiguous from the identifier. The tier within it
+is not something the app can name with confidence, and inventing a plausible
+marketing name for a plan is exactly the kind of small fabrication this project
+avoids. The raw identifier is kept in diagnostics, and anyone who knows what
+their plan is called can rename the account in one field.
 
 ---
 
-## A second Claude account needs a manual credential import
+## There is no in-app sign-in; accounts are added from a tool you signed in with
 
-**What.** Adding a second Claude account is not one click.
+**What.** "+ Add Claude Account" does not open a Claude login page. It adds the
+account that Claude Code is currently signed in to. The same is true for OpenAI
+and the ChatGPT app / `codex login`.
 
-**Why.** Claude Code stores exactly one credential in its Keychain item, and this
-app does not implement an OAuth sign-in flow of its own — deliberately, since the
-whole security model rests on reading credentials rather than minting them. So
-the second account's credential has to be imported once, by hand, into this
-app's own Keychain entry. The procedure is in the README.
+**Why.** A browser OAuth flow would mean this app minting its own tokens, and the
+only client identifier available to it is the one belonging to the provider's own
+first-party tool. Presenting a third-party menu bar app as that tool is not a
+provider-supported mechanism, and is not something to do with somebody's account.
+So the app continues to do what it has always done — read a credential the user
+deliberately created with a first-party tool — and the onboarding flow makes that
+a guided three steps rather than a manual Keychain copy.
+
+Once added, the account no longer depends on that tool: the credential is copied
+into this app's own Keychain entry, so you can sign a different account in
+afterwards and close the browser profile you used.
+
+---
+
+## An OpenAI account's captured credential expires, and is not renewed
+
+**What.** A saved OpenAI account eventually shows "Reconnect required".
+
+**Why.** OpenAI access tokens are short-lived. Renewing one means exchanging its
+refresh token, and the provider may rotate that token in the process — which
+would invalidate the copy the ChatGPT app and Codex rely on and sign the user out
+of the tools they actually work in. Breaking someone's Codex login to keep a
+dashboard's number fresh is not a trade worth making, so the app reports the
+state instead of renewing it.
+
+**What softens it.** When a captured OpenAI credential expires, the app checks
+whether Codex now holds a live credential for *the same account id* and adopts it
+silently. In practice, signing that account back in anywhere on this Mac revives
+the saved account with no reconnect step. Claude accounts are not affected: their
+credentials carry a refresh token that this app renews into its own copy.
 
 ---
 

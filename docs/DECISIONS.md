@@ -221,3 +221,85 @@ repository we do not publish to. This project has no releases yet.
 
 **Future work.** Reinstate, pointed at this project's own releases, when there is
 a signed build to ship.
+
+
+---
+
+## 12. No in-app OAuth sign-in; onboarding adopts a first-party credential
+
+**Problem.** The ideal flow is "click Add Account, sign in, done". Implementing
+it means this app running its own OAuth flow against Anthropic and OpenAI.
+
+**Options.** (a) A browser OAuth flow using the client identifier belonging to
+the provider's own CLI. (b) Register this app as its own OAuth client. (c) Keep
+reading credentials a first-party tool created, but wrap it in a guided flow.
+
+**Decision.** (c).
+
+**Reason.** (a) would mean presenting a third-party menu bar app to the provider
+as Claude Code or Codex in order to mint fresh tokens on someone's account. That
+is not a provider-supported mechanism, and the brief asked for direct login only
+if it could be done "safely and legitimately". (b) is not available — neither
+provider offers third-party client registration for these consumer subscription
+endpoints. (c) keeps the security model the project has always had: the app
+reads credentials, it never mints them.
+
+What (c) gives up is one click. What it keeps is the outcome that actually
+mattered — after onboarding, the account no longer depends on what the
+first-party tool is signed in to, because its credential has been copied into
+this app's own Keychain entry.
+
+**Consequences.** Adding a second Claude account means signing Claude Code in to
+it once. The flow makes that three guided steps instead of a manual Keychain
+copy. Documented in the README and known limitations.
+
+---
+
+## 13. Captured credentials, not borrowed ones
+
+**Problem.** An account that reads from Claude Code's single Keychain item is not
+really a saved account: sign a different account into Claude Code and it starts
+reporting someone else's usage.
+
+**Decision.** Saving an account copies the credential into this app's own
+Keychain service, keyed by the account's id, before the account record is
+written. If the copy fails, nothing is saved.
+
+**Reason.** This is what makes the dashboard a dashboard. It is also what makes
+identity trustworthy: an account's numbers and its name stay attached to the same
+provider account for as long as the credential lives.
+
+**Consequences.** Removing an account deletes exactly one Keychain item — the
+copy — and never the provider's own. Claude's captured copies renew themselves
+via their refresh token; OpenAI's cannot, which is covered in known limitations.
+
+---
+
+## 14. Duplicate detection prefers a stable id, and refuses to guess
+
+**Problem.** Two saved profiles for one account would make the dashboard lie
+about capacity.
+
+**Decision.** `AccountIdentity.matches` compares the provider's stable account id
+when both sides have one, falls back to a case-insensitive e-mail comparison, and
+otherwise reports *not the same*.
+
+**Reason.** Wrongly merging two accounts is worse than showing a duplicate the
+user can remove in one click: a merge silently attributes one account's usage to
+another, which is precisely the decision this app exists to inform. So the
+ambiguous case fails open.
+
+---
+
+## 15. Silent reconnect only on proven identity
+
+**Problem.** A captured credential expires. The provider's own tool may now hold a
+fresh one — or may hold a completely different account's.
+
+**Decision.** Adopt the live credential only when its account id matches the saved
+account's. For OpenAI this is a local comparison; for Claude, whose credential
+does not name its account, it costs one profile call on the failure path.
+
+**Reason.** Adopting an unverified credential would repoint an account at someone
+else's usage without saying so. The cost of being strict is an occasional manual
+reconnect; the cost of being loose is a dashboard that quietly lies.

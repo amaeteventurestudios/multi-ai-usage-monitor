@@ -1,28 +1,28 @@
 import AppKit
 
-/// Editor for one account, presented as a sheet.
+/// Editor for one saved account.
 ///
-/// Everything that distinguishes one account from another lives here: its name,
-/// whether it is on, which credential it reads, when its windows reset, and
-/// whether it warns at a different level from everything else.
+/// Deliberately small. Everything about *getting* a credential now lives in the
+/// guided onboarding flow, so this pane is only about what the user decides:
+/// what to call the account, whether it is on, when its windows reset and how
+/// loudly it should warn. Changing the credential is one button that hands back
+/// to that same guided flow.
 final class AccountEditorController: NSObject {
 
     var onSave: ((AIAccount) -> Void)?
     var onDelete: ((UUID) -> Void)?
+    /// Asks the settings window to run the guided reconnect flow for this
+    /// account — the editor never touches credentials itself.
+    var onReconnect: ((AIAccount) -> Void)?
 
     private var account: AIAccount
-    private let isNew: Bool
     private let coordinator: UsageCoordinator
 
     private var sheet: NSWindow!
-    /// Exposed so the settings window can keep the sheet's background in step
-    /// with the rest of the app.
     var sheetWindow: NSWindow? { sheet }
+
     private var nameField: NSTextField!
     private var enabledBox: NSButton!
-    private var sourcePopup: NSPopUpButton!
-    private var sourceDetail: NSTextField!
-    private var statusLabel: NSTextField!
     private var preferProviderBox: NSButton!
     private var useWeeklyBox: NSButton!
     private var weekdayPopup: NSPopUpButton!
@@ -31,13 +31,8 @@ final class AccountEditorController: NSObject {
     private var customThresholdBox: NSButton!
     private var thresholdField: NSTextField!
 
-    /// The credential file or imported blob chosen in this sheet but not yet saved.
-    private var pendingFilePath: String?
-    private var pendingImportedJSON: String?
-
-    init(account: AIAccount, isNew: Bool, coordinator: UsageCoordinator) {
+    init(account: AIAccount, coordinator: UsageCoordinator) {
         self.account = account
-        self.isNew = isNew
         self.coordinator = coordinator
         super.init()
     }
@@ -45,18 +40,17 @@ final class AccountEditorController: NSObject {
     // MARK: - Presentation
 
     func beginSheet(on parent: NSWindow) {
-        sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 470),
+        sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 470),
                          styleMask: [.titled], backing: .buffered, defer: false)
-        sheet.title = isNew ? "Add Account" : "Edit Account"
+        sheet.title = "Edit Account"
         sheet.contentView = buildBody()
         parent.beginSheet(sheet, completionHandler: nil)
+        WindowBackground.apply(opacity: coordinator.settings.backgroundOpacity, to: sheet)
     }
 
-    private func close() {
-        sheet.sheetParent?.endSheet(sheet)
-    }
+    private func close() { sheet.sheetParent?.endSheet(sheet) }
 
-    // MARK: - Body
+    // MARK: - Builders
 
     private func label(_ text: String, size: CGFloat = NSFont.systemFontSize,
                        color: NSColor = .labelColor, bold: Bool = false,
@@ -80,61 +74,48 @@ final class AccountEditorController: NSObject {
         return s
     }
 
-    /// Credential sources offered for this account's provider, in the order a
-    /// user is most likely to want them.
-    private func availableSources() -> [CredentialSource] {
-        switch account.provider {
-        case .claude:
-            return [.claudeCodeKeychain, .appKeychain(id: account.id.uuidString), .file(path: "")]
-        case .openAI:
-            return [.codexDefault, .file(path: "")]
-        }
-    }
-
-    private func sourceTitle(_ s: CredentialSource) -> String {
-        switch s {
-        case .claudeCodeKeychain: return "Claude Code credential (macOS Keychain)"
-        case .appKeychain: return "Imported credential (this app's Keychain entry)"
-        case .file: return "Credential file at a custom path"
-        case .codexDefault: return "Codex / ChatGPT default (~/.codex/auth.json)"
-        }
-    }
-
-    private func sameKind(_ a: CredentialSource, _ b: CredentialSource) -> Bool {
-        switch (a, b) {
-        case (.claudeCodeKeychain, .claudeCodeKeychain), (.codexDefault, .codexDefault),
-             (.appKeychain, .appKeychain), (.file, .file):
-            return true
-        default: return false
-        }
-    }
-
     private func buildBody() -> NSView {
-        nameField = NSTextField(string: account.displayName)
-        nameField.translatesAutoresizingMaskIntoConstraints = false
-        nameField.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        // Identity, stated as fact rather than as something to edit.
+        let identityRows: [NSView]
+        if let identity = account.identity, identity.isIdentified {
+            var rows: [NSView] = [
+                label(identity.email ?? "Confirmed by \(account.provider.displayName)",
+                      size: 13, bold: true),
+            ]
+            if let subtitle = identity.subtitle {
+                rows.append(label(subtitle, size: 11, color: .secondaryLabelColor))
+            }
+            rows.append(label("Confirmed by \(account.provider.displayName).",
+                              size: 11, color: .secondaryLabelColor))
+            identityRows = rows
+        } else {
+            identityRows = [
+                label("Identity not verified", size: 13, bold: true),
+                label("\(account.provider.displayName) did not say which account this credential "
+                    + "belongs to. Any name below is a local label you chose, not something the "
+                    + "provider confirmed.", size: 11, color: .secondaryLabelColor, wrap: 440),
+            ]
+        }
 
-        enabledBox = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
+        nameField = NSTextField(string: account.customDisplayName ?? "")
+        nameField.placeholderString = AccountNaming.displayName(provider: account.provider,
+                                                               identity: account.identity,
+                                                               custom: nil)
+        nameField.translatesAutoresizingMaskIntoConstraints = false
+        nameField.widthAnchor.constraint(equalToConstant: 320).isActive = true
+
+        enabledBox = NSButton(checkboxWithTitle: "Show this account", target: nil, action: nil)
         enabledBox.state = account.enabled ? .on : .off
 
-        sourcePopup = NSPopUpButton()
-        for s in availableSources() { sourcePopup.addItem(withTitle: sourceTitle(s)) }
-        sourcePopup.selectItem(at: availableSources().firstIndex { sameKind($0, account.credentialSource) } ?? 0)
-        sourcePopup.target = self
-        sourcePopup.action = #selector(sourceChanged)
-
-        sourceDetail = label("", size: 11, color: .secondaryLabelColor, wrap: 420)
-        statusLabel = label("", size: 11, color: .secondaryLabelColor, wrap: 420)
-
-        let chooseFile = NSButton(title: "Choose File…", target: self, action: #selector(chooseFile))
-        chooseFile.bezelStyle = .rounded
-        chooseFile.controlSize = .small
-        let useDefault = NSButton(title: "Use Default", target: self, action: #selector(useDefaultSource))
-        useDefault.bezelStyle = .rounded
-        useDefault.controlSize = .small
-        let importBtn = NSButton(title: "Import Credential…", target: self, action: #selector(importCredential))
-        importBtn.bezelStyle = .rounded
-        importBtn.controlSize = .small
+        let status = ProviderRegistry.provider(for: account.provider).credentialStatus(for: account)
+        let statusText = status == .detected ? "Connected" : "Reconnect required"
+        let statusLabel = label("Credential: \(account.credentialSource.kindLabel) · \(statusText)",
+                                size: 11,
+                                color: status == .detected ? .secondaryLabelColor : .systemOrange,
+                                wrap: 440)
+        let reconnect = NSButton(title: "Reconnect…", target: self, action: #selector(reconnectTapped))
+        reconnect.bezelStyle = .rounded
+        reconnect.controlSize = .small
 
         // Reset behaviour
         preferProviderBox = NSButton(checkboxWithTitle: "Use the provider's reset time when it reports one",
@@ -163,33 +144,32 @@ final class AccountEditorController: NSObject {
         customThresholdBox = NSButton(checkboxWithTitle: "Use a custom warning threshold",
                                       target: self, action: #selector(thresholdControlsChanged))
         customThresholdBox.state = account.notificationThresholdPercent != nil ? .on : .off
-        thresholdField = NSTextField(string: "\(account.notificationThresholdPercent ?? coordinator.settings.warningThresholdPercent)")
+        thresholdField = NSTextField(
+            string: "\(account.notificationThresholdPercent ?? coordinator.settings.warningThresholdPercent)")
         thresholdField.alignment = .right
         thresholdField.translatesAutoresizingMaskIntoConstraints = false
         thresholdField.widthAnchor.constraint(equalToConstant: 54).isActive = true
 
-        let save = NSButton(title: isNew ? "Add Account" : "Save", target: self, action: #selector(saveTapped))
+        let save = NSButton(title: "Save", target: self, action: #selector(saveTapped))
         save.bezelStyle = .rounded
         save.keyEquivalent = "\r"
         let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelTapped))
         cancel.bezelStyle = .rounded
-        var footer: [NSView] = [cancel, save]
-        if !isNew {
-            let remove = NSButton(title: "Remove Account", target: self, action: #selector(removeTapped))
-            remove.bezelStyle = .rounded
-            footer.insert(remove, at: 0)
-        }
+        let remove = NSButton(title: "Remove Account", target: self, action: #selector(removeTapped))
+        remove.bezelStyle = .rounded
 
-        let stack = NSStackView(views: [
-            label("Display Name", size: 12, bold: true),
+        var views: [NSView] = [label("Account", size: 12, bold: true)]
+        views.append(contentsOf: identityRows)
+        views.append(contentsOf: [
+            label("Name shown in the menu", size: 12, bold: true),
             nameField,
-            hstack([label("Provider: \(account.provider.displayName)", size: 12), enabledBox]),
+            label("Leave empty to use the detected account name.", size: 11,
+                  color: .secondaryLabelColor),
+            enabledBox,
 
-            label("Credential Source", size: 12, bold: true),
-            sourcePopup,
-            sourceDetail,
+            label("Credential", size: 12, bold: true),
             statusLabel,
-            hstack([chooseFile, useDefault, importBtn]),
+            hstack([reconnect]),
 
             label("Reset Behaviour", size: 12, bold: true),
             preferProviderBox,
@@ -201,11 +181,13 @@ final class AccountEditorController: NSObject {
             customThresholdBox,
             hstack([label("Warn at"), thresholdField, label("% used")]),
 
-            hstack(footer),
+            hstack([remove, cancel, save]),
         ])
+
+        let stack = NSStackView(views: views)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
+        stack.spacing = 7
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 20, bottom: 18, right: 20)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
@@ -218,152 +200,12 @@ final class AccountEditorController: NSObject {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
 
-        updateSourceLabels()
         resetControlsChanged()
         thresholdControlsChanged()
         return container
     }
 
-    // MARK: - Credential source
-
-    private func currentSelectedSource() -> CredentialSource {
-        let choices = availableSources()
-        let idx = min(max(0, sourcePopup.indexOfSelectedItem), choices.count - 1)
-        switch choices[idx] {
-        case .file:
-            return .file(path: pendingFilePath ?? filePathFromAccount() ?? "")
-        case .appKeychain:
-            return .appKeychain(id: account.id.uuidString)
-        case let other:
-            return other
-        }
-    }
-
-    private func filePathFromAccount() -> String? {
-        if case .file(let p) = account.credentialSource { return p }
-        return nil
-    }
-
-    @objc private func sourceChanged() { updateSourceLabels() }
-
-    private func updateSourceLabels() {
-        let source = currentSelectedSource()
-        switch source {
-        case .file(let path):
-            sourceDetail.stringValue = path.isEmpty
-                ? "No file chosen yet. Use “Choose File…”."
-                : (path as NSString).abbreviatingWithTildeInPath
-        case .appKeychain:
-            let present = Keychain.exists(service: AppInfo.appKeychainService,
-                                          account: account.id.uuidString)
-            sourceDetail.stringValue = present
-                ? "A credential is stored for this account in the macOS Keychain."
-                : "No credential imported yet. Use “Import Credential…”."
-        default:
-            sourceDetail.stringValue = source.locationLabel
-        }
-
-        // Status is computed from the source being *considered*, so the sheet
-        // tells you whether a choice will work before you commit to it.
-        var probe = account
-        probe.credentialSource = source
-        let status = ProviderRegistry.provider(for: account.provider).credentialStatus(for: probe)
-        statusLabel.stringValue = "Status: \(status.displayName)"
-        statusLabel.textColor = status == .detected ? .systemGreen
-            : (status == .expired ? .systemOrange : .secondaryLabelColor)
-    }
-
-    @objc private func chooseFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.showsHiddenFiles = true
-        panel.message = account.provider == .openAI
-            ? "Choose a Codex auth.json to read. This file is only ever read, never written."
-            : "Choose a JSON file holding a Claude credential. It is only ever read."
-        panel.beginSheetModal(for: sheet) { [weak self] response in
-            guard let self = self, response == .OK, let url = panel.url else { return }
-            if self.account.provider == .openAI,
-               case .failure(let error) = CodexCredentialStore.validate(path: url.path) {
-                self.presentError(error.message)
-                return
-            }
-            self.pendingFilePath = url.path
-            let choices = self.availableSources()
-            if let idx = choices.firstIndex(where: { if case .file = $0 { return true }; return false }) {
-                self.sourcePopup.selectItem(at: idx)
-            }
-            self.updateSourceLabels()
-        }
-    }
-
-    @objc private func useDefaultSource() {
-        pendingFilePath = nil
-        let choices = availableSources()
-        let defaultIndex = choices.firstIndex { source in
-            switch (source, account.provider) {
-            case (.claudeCodeKeychain, .claude), (.codexDefault, .openAI): return true
-            default: return false
-            }
-        } ?? 0
-        sourcePopup.selectItem(at: defaultIndex)
-        updateSourceLabels()
-    }
-
-    /// Import a credential into this app's own Keychain entry.
-    ///
-    /// This is how a second Claude account coexists with the first: Claude Code
-    /// keeps exactly one credential in its own Keychain item, so a second
-    /// account needs somewhere else to live. The value is typed into a secure
-    /// field and written straight to the Keychain — it is never held in user
-    /// defaults, never written to a file, and never logged.
-    @objc private func importCredential() {
-        let alert = NSAlert()
-        alert.messageText = "Import a Claude credential"
-        alert.informativeText = """
-            Paste the credential JSON for this account (the object containing \
-            "claudeAiOauth"). It is written straight into the macOS Keychain \
-            under this app's own entry and is never stored anywhere else.
-
-            Sign in to the second account with Claude Code, copy its Keychain \
-            item, then sign back in to the first — this app keeps its own copy \
-            so the two no longer overwrite each other.
-            """
-        let input = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
-        alert.accessoryView = input
-        alert.addButton(withTitle: "Import")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: sheet) { [weak self] response in
-            guard let self = self, response == .alertFirstButtonReturn else { return }
-            let value = input.stringValue
-            guard ClaudeCredentials.parse(json: value) != nil else {
-                self.presentError("That does not look like a Claude credential. Expected JSON "
-                                + "with an accessToken field.")
-                return
-            }
-            guard ClaudeCredentialStore.importCredential(value, forAccountID: self.account.id) else {
-                self.presentError("Could not write to the Keychain.")
-                return
-            }
-            self.pendingImportedJSON = nil   // written already; nothing kept in memory
-            let choices = self.availableSources()
-            if let idx = choices.firstIndex(where: { if case .appKeychain = $0 { return true }; return false }) {
-                self.sourcePopup.selectItem(at: idx)
-            }
-            self.updateSourceLabels()
-        }
-    }
-
-    private func presentError(_ message: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Could not use that credential"
-        alert.informativeText = message
-        alert.beginSheetModal(for: sheet, completionHandler: nil)
-    }
-
-    // MARK: - Reset controls
+    // MARK: - Actions
 
     @objc private func resetControlsChanged() {
         let useWeekly = useWeeklyBox.state == .on
@@ -376,26 +218,17 @@ final class AccountEditorController: NSObject {
         thresholdField.isEnabled = customThresholdBox.state == .on
     }
 
-    // MARK: - Save
+    @objc private func reconnectTapped() {
+        let account = self.account
+        close()
+        onReconnect?(account)
+    }
 
     @objc private func saveTapped() {
         var updated = account
-        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        updated.displayName = name.isEmpty ? account.displayName : name
+        let typed = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.customDisplayName = typed.isEmpty ? nil : typed
         updated.enabled = enabledBox.state == .on
-
-        let source = currentSelectedSource()
-        if case .file(let path) = source {
-            guard !path.isEmpty else {
-                presentError("Choose a credential file first, or pick another source.")
-                return
-            }
-            if account.provider == .openAI, case .failure(let error) = CodexCredentialStore.validate(path: path) {
-                presentError(error.message)
-                return
-            }
-        }
-        updated.credentialSource = source
 
         var overrides = ResetOverrides()
         overrides.preferProviderReset = preferProviderBox.state == .on
@@ -403,8 +236,6 @@ final class AccountEditorController: NSObject {
             overrides.weekly = WeeklyResetRule(weekday: weekdayPopup.indexOfSelectedItem + 1,
                                                hour: Int(hourField.stringValue) ?? 0,
                                                minute: Int(minuteField.stringValue) ?? 0)
-        } else {
-            overrides.weekly = nil
         }
         updated.resetOverrides = overrides
 
@@ -421,7 +252,7 @@ final class AccountEditorController: NSObject {
     @objc private func removeTapped() {
         let alert = NSAlert()
         alert.messageText = "Remove “\(account.displayName)”?"
-        alert.informativeText = "Only a credential copy this app imported is deleted. "
+        alert.informativeText = "Only the credential copy this app imported is deleted. "
             + "Claude Code's and the ChatGPT app's own credentials are untouched."
         alert.addButton(withTitle: "Remove")
         alert.addButton(withTitle: "Cancel")

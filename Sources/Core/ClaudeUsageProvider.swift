@@ -11,6 +11,10 @@ final class ClaudeUsageProvider: UsageProvider {
     let providerKind: ProviderKind = .claude
 
     static let usageURL = "https://api.anthropic.com/api/oauth/usage"
+    /// Names the account a credential belongs to — e-mail, a stable account
+    /// uuid, and the plan. This is what lets a saved account be called
+    /// "Claude (you@example.com)" instead of "Claude Account 2".
+    static let profileURL = "https://api.anthropic.com/api/oauth/profile"
     static let tokenURL = "https://platform.claude.com/v1/oauth/token"
     /// Claude Code's public OAuth client id — a published client identifier,
     /// not a secret.
@@ -26,15 +30,127 @@ final class ClaudeUsageProvider: UsageProvider {
         ClaudeCredentialStore.status(of: account.credentialSource)
     }
 
-    func suggestedDisplayName(for source: CredentialSource) -> String? {
-        guard let creds = ClaudeCredentialStore.read(source: source) else { return nil }
-        // The credential records a plan, not an identity — the usage endpoint
-        // does not name the account either. A plan is a better starting label
-        // than nothing, and the user can rename it.
-        if let plan = creds.subscriptionType ?? creds.rateLimitTier, !plan.isEmpty {
-            return "Claude (\(plan))"
+    func credentialMethods() -> [CredentialMethod] {
+        [
+            CredentialMethod(
+                title: "Import the current Claude Code account",
+                detail: "This app copies that credential into its own Keychain entry, so you "
+                      + "can switch Claude Code to a different account afterwards and this one "
+                      + "keeps working.",
+                source: .claudeCodeKeychain,
+                isPrimary: true,
+                preflightHeading: "Current Claude Code account",
+                // Claude Code signs in separately from claude.ai in a browser and
+                // from the Claude desktop app. Someone looking at a different
+                // account in one of those would otherwise import a credential
+                // they did not expect, and only notice later.
+                disclaimer: "This reads Claude Code's terminal/CLI credential. Your Claude "
+                          + "browser or desktop-app login may be a different account.",
+                switchInstruction: "Switch Claude Code to the account you want to import, "
+                                 + "then click Check Again."),
+            CredentialMethod(
+                title: "Read a credential file instead",
+                detail: "Point at a JSON file holding a Claude credential. The file is only "
+                      + "ever read, never written.",
+                source: .file(path: ""),
+                requiresFileChoice: true),
+        ]
+    }
+
+    /// Ask Anthropic who this credential belongs to.
+    ///
+    /// Refreshes an expired token first, so onboarding does not fail on a stale
+    /// credential that is otherwise perfectly good.
+    func discoverIdentity(source: CredentialSource,
+                          completion: @escaping (Result<AccountIdentity, AccountError>) -> Void) {
+        guard let creds = ClaudeCredentialStore.read(source: source) else {
+            completion(.failure(AccountError(
+                kind: .missingCredential,
+                message: "No Claude credential found there.",
+                recovery: recoveryHint(for: source))))
+            return
         }
-        return nil
+        let probe = AIAccount(provider: .claude, credentialSource: source)
+        if creds.isExpired {
+            refreshToken(creds, account: probe) { [weak self] refreshed in
+                guard let self = self else { return }
+                guard let refreshed = refreshed else {
+                    completion(.failure(AccountError(
+                        kind: .expiredCredential,
+                        message: "That credential has expired and could not be renewed.",
+                        recovery: "Sign in again with Claude Code, then try once more.")))
+                    return
+                }
+                self.loadProfile(token: refreshed.accessToken, creds: refreshed, completion: completion)
+            }
+            return
+        }
+        loadProfile(token: creds.accessToken, creds: creds, completion: completion)
+    }
+
+    private func loadProfile(token: String,
+                             creds: ClaudeCredentials,
+                             completion: @escaping (Result<AccountIdentity, AccountError>) -> Void) {
+        HTTP.getJSON(url: ClaudeUsageProvider.profileURL,
+                     headers: ["Authorization": "Bearer \(token)",
+                               "anthropic-beta": "oauth-2025-04-20"]) { result in
+            switch result {
+            case .success(let obj):
+                completion(.success(ClaudeIdentityParser.parse(obj, credentials: creds)))
+            case .failure(let error):
+                let classified = HTTP.classify(error, provider: .claude)
+                // A working credential whose profile we cannot read is still
+                // usable for usage; report what the plan says and let the UI
+                // offer a local label rather than blocking onboarding.
+                if classified.kind == .parsing || classified.kind == .providerUnavailable {
+                    completion(.success(ClaudeIdentityParser.unidentified(credentials: creds)))
+                } else {
+                    completion(.failure(classified))
+                }
+            }
+        }
+    }
+
+    func captureCredential(from source: CredentialSource,
+                           forAccountID id: UUID) -> Result<CredentialSource, AccountError> {
+        guard let creds = ClaudeCredentialStore.read(source: source) else {
+            return .failure(AccountError(kind: .missingCredential,
+                                         message: "No Claude credential found there.",
+                                         recovery: recoveryHint(for: source)))
+        }
+        let destination = CredentialSource.appKeychain(id: id.uuidString)
+        guard ClaudeCredentialStore.write(creds, to: destination) else {
+            return .failure(AccountError(kind: .unreadableCredential,
+                                         message: "Could not save the credential to the Keychain."))
+        }
+        return .success(destination)
+    }
+
+    /// Claude tokens carry a refresh token, so an expired captured credential
+    /// normally renews itself. This covers the case where the refresh token
+    /// itself is dead but Claude Code has since been signed back in to the
+    /// *same* account — then its credential is safe to adopt.
+    func silentReconnect(for account: AIAccount,
+                         completion: @escaping (CredentialSource?) -> Void) {
+        guard account.hasCapturedCredential,
+              let identity = account.identity, identity.isIdentified,
+              let live = ClaudeCredentialStore.read(source: .claudeCodeKeychain),
+              !live.isExpired else { completion(nil); return }
+
+        // The credential itself does not name its account, so ask the provider
+        // before adopting anything. Without proof that it is the same account,
+        // we do nothing and let the user reconnect deliberately.
+        discoverIdentity(source: .claudeCodeKeychain) { [weak self] result in
+            guard let self = self,
+                  case .success(let liveIdentity) = result,
+                  liveIdentity.matches(identity),
+                  case .success(let source) = self.captureCredential(from: .claudeCodeKeychain,
+                                                                     forAccountID: account.id) else {
+                completion(nil); return
+            }
+            Diagnostics.shared.info("adopted a fresh Claude Code credential for a matching saved account")
+            completion(source)
+        }
     }
 
     func fetchUsage(for account: AIAccount,
@@ -301,4 +417,60 @@ private let isoFractional: ISO8601DateFormatter = {
 func parseISODate(_ s: Any?) -> Date? {
     guard let s = s as? String else { return nil }
     return isoFractional.date(from: s) ?? isoPlain.date(from: s)
+}
+
+/// Parses the OAuth profile response into an account identity. Pure, so the
+/// naming rules can be tested against a fixture with no credential.
+enum ClaudeIdentityParser {
+
+    static func parse(_ obj: [String: Any],
+                      credentials: ClaudeCredentials? = nil,
+                      now: Date = Date()) -> AccountIdentity {
+        let account = obj["account"] as? [String: Any]
+        let organization = obj["organization"] as? [String: Any]
+
+        let email = (account?["email"] as? String) ?? (obj["email_address"] as? String)
+        let uuid = (account?["uuid"] as? String) ?? (obj["uuid"] as? String)
+        let orgName = organization?["name"] as? String
+
+        // Plan, in order of how directly the provider states it.
+        let rawPlan = (organization?["organization_type"] as? String)
+            ?? credentials?.subscriptionType
+            ?? credentials?.rateLimitTier
+        var label = planLabel(rawPlan)
+        if label == nil {
+            if (account?["has_claude_max"] as? Bool) == true { label = "Max" }
+            else if (account?["has_claude_pro"] as? Bool) == true { label = "Pro" }
+        }
+
+        return AccountIdentity(email: email,
+                               providerAccountID: uuid,
+                               organizationName: orgName,
+                               planRaw: rawPlan,
+                               planLabel: label,
+                               verified: email != nil || uuid != nil,
+                               detectedAt: now)
+    }
+
+    /// Everything we can say when the provider will not name the account.
+    static func unidentified(credentials: ClaudeCredentials?, now: Date = Date()) -> AccountIdentity {
+        let raw = credentials?.subscriptionType ?? credentials?.rateLimitTier
+        return AccountIdentity(planRaw: raw, planLabel: planLabel(raw),
+                               verified: false, detectedAt: now)
+    }
+
+    /// Friendly plan names, only where the mapping is certain. An identifier we
+    /// do not recognise keeps its raw form in diagnostics and contributes no
+    /// label, rather than being renamed to something that sounds plausible.
+    static func planLabel(_ raw: String?) -> String? {
+        guard let raw = raw?.lowercased(), !raw.isEmpty else { return nil }
+        switch raw {
+        case "claude_max", "max": return "Max"
+        case "claude_pro", "pro": return "Pro"
+        case "claude_team", "team": return "Team"
+        case "claude_enterprise", "enterprise": return "Enterprise"
+        case "claude_free", "free": return "Free"
+        default: return nil
+        }
+    }
 }
