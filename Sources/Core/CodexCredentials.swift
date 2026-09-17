@@ -1,7 +1,7 @@
 // Portions of this file derive from AI Usage Monitor
 // (https://github.com/stavrop/ai-usage-monitor), Copyright 2026 Georgios
 // Stavropoulos, licensed under the Apache License 2.0. Modified for
-// Multi AI Usage Monitor, Copyright 2026 Amaete Venture Studios. See NOTICE.
+// Multi AI Usage Monitor, Copyright 2026 Amaete Umanah. See NOTICE.
 
 import Foundation
 

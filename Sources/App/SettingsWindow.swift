@@ -591,7 +591,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             label("Open source under the \(AppInfo.licenseName).", size: 11,
                   color: .secondaryLabelColor, wrapWidth: 480),
             label("Derived from stavrop/ai-usage-monitor, © Georgios Stavropoulos, "
-                + "used under the Apache License 2.0. Modifications © 2026 Amaete Venture Studios.",
+                + "used under the Apache License 2.0. Modifications © 2026 Amaete Umanah.",
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480),
             label("Privacy", size: 13, bold: true),
             label("Local-first. Credentials stay in the macOS Keychain or in the credential "
