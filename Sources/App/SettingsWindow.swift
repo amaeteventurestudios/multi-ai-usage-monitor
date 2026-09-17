@@ -32,7 +32,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var lastRefreshLabel: NSTextField!
     private var opacitySlider: NSSlider!
     private var opacityValueLabel: NSTextField!
+    private var summaryModeExplanation: NSTextField!
     private var editor: AccountEditorController?
+    private var onboarding: AccountOnboardingController?
 
     init(coordinator: UsageCoordinator) {
         self.coordinator = coordinator
@@ -206,9 +208,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
 
         accountsStack.addArrangedSubview(
-            label("This app never signs you in. It reads credentials the provider's own "
-                + "tools already store on this Mac, or a copy you explicitly imported into "
-                + "the macOS Keychain. It never writes ~/.codex/auth.json.",
+            label("Adding an account copies the credential into this app's own Keychain entry "
+                + "and records who the provider says it belongs to. After that you can sign a "
+                + "different account into Claude Code, ChatGPT or Codex — and close the browser "
+                + "you signed in with — and every saved account here keeps reporting. "
+                + "This app never signs you in and never writes ~/.codex/auth.json.",
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480))
     }
 
@@ -225,8 +229,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let statusDot = label(statusText(status), size: 11, color: statusColor(status))
 
-        let credential = label("Credential: \(account.credentialSource.kindLabel) · "
-                             + "\(account.credentialSource.locationLabel)",
+        // What the provider told us about this account, kept separate from the
+        // name so a local label can never masquerade as confirmed identity.
+        let identityText: String
+        if let identity = account.identity, identity.isIdentified {
+            identityText = [identity.email, identity.subtitle]
+                .compactMap { $0 }.joined(separator: " · ")
+        } else {
+            identityText = "Identity not verified by \(account.provider.displayName)"
+        }
+        let identityLabel = label(identityText, size: 11,
+                                  color: account.isIdentified ? .secondaryLabelColor : .tertiaryLabelColor,
+                                  wrapWidth: 440)
+
+        let credential = label("Credential: \(account.credentialSource.kindLabel)"
+                             + (account.hasCapturedCredential ? " (saved copy)" : ""),
                                size: 11, color: .secondaryLabelColor, wrapWidth: 440)
 
         let resetText: String
@@ -239,7 +256,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         let reset = label(resetText, size: 11, color: .secondaryLabelColor, wrapWidth: 440)
 
-        var lines: [NSView] = [hstack([enabledBox, statusDot]), credential, reset]
+        var lines: [NSView] = [hstack([enabledBox, statusDot]), identityLabel, credential, reset]
 
         if let error = state.error {
             lines.append(label("⚠︎ \(error.message)", size: 11, color: .systemOrange, wrapWidth: 440))
@@ -250,8 +267,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
         let buttons = hstack([
             smallButton("Edit", #selector(editAccountTapped(_:)), tag: index),
-            smallButton("Change Credential", #selector(changeCredentialTapped(_:)), tag: index),
-            smallButton("Reconnect", #selector(reconnectTapped(_:)), tag: index),
+            smallButton("Reconnect…", #selector(reconnectTapped(_:)), tag: index),
             smallButton("↑", #selector(moveUpTapped(_:)), tag: index),
             smallButton("↓", #selector(moveDownTapped(_:)), tag: index),
             smallButton("Remove", #selector(removeAccountTapped(_:)), tag: index),
@@ -268,8 +284,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func statusText(_ s: CredentialStatus) -> String {
         switch s {
         case .detected: return "● Connected"
-        case .missing: return "○ Missing"
-        case .expired: return "◐ Expired"
+        case .missing: return "○ Reconnect required"
+        case .expired: return "◐ Reconnect required"
         case .invalid: return "○ Invalid"
         case .unreadable: return "○ Unreadable"
         }
@@ -292,38 +308,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func addAccountTapped(_ sender: NSButton) {
         let provider = ProviderKind.allCases[min(max(0, sender.tag), ProviderKind.allCases.count - 1)]
-        let existing = store.accounts(for: provider).count
-        let defaultSource: CredentialSource = provider == .claude
-            ? (store.accounts(for: .claude).contains { $0.credentialSource == .claudeCodeKeychain }
-                ? .appKeychain(id: UUID().uuidString) : .claudeCodeKeychain)
-            : (store.accounts(for: .openAI).contains { $0.credentialSource == .codexDefault }
-                ? .file(path: "") : .codexDefault)
-
-        var account = AIAccount(provider: provider,
-                                displayName: "\(provider.displayName) Account \(existing + 1)",
-                                credentialSource: defaultSource)
-        // A credential that identifies itself names the account better than a
-        // counter does — but only when there really is one to read.
-        if let suggested = ProviderRegistry.provider(for: provider)
-            .suggestedDisplayName(for: defaultSource), existing == 0 {
-            account.displayName = suggested
-        }
-        presentEditor(for: account, isNew: true)
+        presentOnboarding(.add(provider))
     }
 
     @objc private func editAccountTapped(_ sender: NSButton) {
         guard let a = account(atTag: sender.tag) else { return }
-        presentEditor(for: a, isNew: false)
+        presentEditor(for: a)
     }
 
-    private func presentEditor(for account: AIAccount, isNew: Bool) {
+    /// The guided flow, used for both adding and reconnecting. The settings
+    /// window owns it so the editor never has to touch credentials.
+    private func presentOnboarding(_ mode: AccountOnboardingController.Mode) {
         guard let window = window else { return }
-        let editor = AccountEditorController(account: account, isNew: isNew,
-                                             coordinator: coordinator)
+        let flow = AccountOnboardingController(mode: mode, coordinator: coordinator)
+        flow.onFinished = { [weak self] _ in
+            self?.reloadAccounts()
+            self?.onChange?()
+        }
+        onboarding = flow
+        flow.beginSheet(on: window)
+    }
+
+    private func presentEditor(for account: AIAccount) {
+        guard let window = window else { return }
+        let editor = AccountEditorController(account: account, coordinator: coordinator)
         editor.onSave = { [weak self] updated in
             guard let self = self else { return }
-            if isNew { self.coordinator.addAccount(updated) }
-            else { self.coordinator.updateAccount(updated) }
+            self.coordinator.updateAccount(updated)
             self.reloadAccounts()
             self.onChange?()
         }
@@ -332,9 +343,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             self?.reloadAccounts()
             self?.onChange?()
         }
+        editor.onReconnect = { [weak self] account in
+            // The editor sheet has already closed itself; hand straight over.
+            self?.presentOnboarding(.reconnect(account))
+        }
         self.editor = editor
         editor.beginSheet(on: window)
-        WindowBackground.apply(opacity: settings.backgroundOpacity, to: editor.sheetWindow)
     }
 
     @objc private func toggleAccount(_ sender: NSButton) {
@@ -346,16 +360,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         onChange?()
     }
 
-    @objc private func changeCredentialTapped(_ sender: NSButton) {
-        guard let a = account(atTag: sender.tag) else { return }
-        presentEditor(for: a, isNew: false)
-    }
-
     @objc private func reconnectTapped(_ sender: NSButton) {
         guard let a = account(atTag: sender.tag) else { return }
-        coordinator.refreshCredentialStatuses()
-        coordinator.refresh(accountID: a.id)
-        reloadAccounts()
+        presentOnboarding(.reconnect(a))
     }
 
     @objc private func moveUpTapped(_ sender: NSButton) {
@@ -413,7 +420,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         opacitySlider.translatesAutoresizingMaskIntoConstraints = false
         opacitySlider.widthAnchor.constraint(equalToConstant: 240).isActive = true
 
-        opacityValueLabel = label(Fmt.percentage(settings.backgroundOpacity), size: 12)
+        summaryModeExplanation = label(settings.menuBarSummaryMode.explanation,
+                                       size: 11, color: .secondaryLabelColor, wrapWidth: 480)
+
+        opacityValueLabel = label(opacityCaption(), size: 12)
         opacityValueLabel.alignment = .right
         opacityValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         opacityValueLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -422,9 +432,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return vstack([
             label("Menu Bar Summary", size: 13, bold: true),
             popup,
-            label("Compact shows every enabled account (C1, C2, G1…). Provider shows the "
-                + "worst account per provider. Minimal shows just “AI”.",
-                  size: 11, color: .secondaryLabelColor, wrapWidth: 480),
+            summaryModeExplanation,
             check("Show percentages", settings.showPercentages, #selector(toggleShowPercentages(_:))),
             check("Show short account badges instead of provider names",
                   settings.showProviderBadges, #selector(toggleShowBadges(_:))),
@@ -436,9 +444,13 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480),
 
             label("Background Opacity", size: 13, bold: true),
-            hstack([opacitySlider, opacityValueLabel]),
+            hstack([label("70%", size: 10, color: .secondaryLabelColor),
+                    opacitySlider,
+                    label("100%", size: 10, color: .secondaryLabelColor)]),
+            opacityValueLabel,
             label("Adjust how solid or transparent the app background appears. "
-                + "Higher is more solid; lower lets the desktop show through.",
+                + "Higher is more solid — and darker in Dark Mode; lower lets the desktop "
+                + "show through. 100% is completely solid.",
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480),
         ])
     }
@@ -448,11 +460,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let opacity = settings.backgroundOpacity
         WindowBackground.apply(opacity: opacity, to: window)
         WindowBackground.apply(opacity: opacity, to: editor?.sheetWindow)
+        WindowBackground.apply(opacity: opacity, to: onboarding?.sheetWindow)
+    }
+
+    private func opacityCaption() -> String {
+        "Current: \(Fmt.percentage(settings.backgroundOpacity))"
     }
 
     @objc private func backgroundOpacityChanged(_ sender: NSSlider) {
         settings.backgroundOpacity = sender.doubleValue
-        opacityValueLabel.stringValue = Fmt.percentage(settings.backgroundOpacity)
+        opacityValueLabel.stringValue = opacityCaption()
         // Immediate, with no restart and no reopening the window.
         applyBackgroundOpacity()
     }
@@ -460,6 +477,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func summaryModeChanged(_ sender: NSPopUpButton) {
         let idx = min(max(0, sender.indexOfSelectedItem), MenuBarSummaryMode.allCases.count - 1)
         settings.menuBarSummaryMode = MenuBarSummaryMode.allCases[idx]
+        // Say what the chosen mode will actually put in the menu bar, rather
+        // than leaving three one-word names to be guessed at.
+        summaryModeExplanation?.stringValue = settings.menuBarSummaryMode.explanation
         onChange?()
     }
     @objc private func toggleShowPercentages(_ s: NSButton) { settings.showPercentages = s.state == .on; onChange?() }
