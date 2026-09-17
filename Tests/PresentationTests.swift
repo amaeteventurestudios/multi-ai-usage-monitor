@@ -135,9 +135,9 @@ func runPresentationTests() {
 
         test("entries come from the accounts, in their configured order") {
             let store = AccountStore(defaults: scratchDefaults())
-            let a = store.add(AIAccount(provider: .claude, displayName: "Personal",
+            let a = store.add(AIAccount(provider: .claude, customDisplayName: "Personal",
                                         credentialSource: .claudeCodeKeychain))
-            let b = store.add(AIAccount(provider: .claude, displayName: "Work",
+            let b = store.add(AIAccount(provider: .claude, customDisplayName: "Work",
                                         credentialSource: .appKeychain(id: "x")))
             var states: [UUID: AccountRuntimeState] = [:]
             states[a.id] = AccountRuntimeState(usage: AccountUsage(accountID: a.id, metrics: [
@@ -173,19 +173,19 @@ func runPresentationTests() {
     suite("End-to-end shape of the dropdown data") {
         test("the topology this project was built for renders as four distinct accounts") {
             let store = AccountStore(defaults: scratchDefaults())
-            let c1 = store.add(AIAccount(provider: .claude, displayName: "Personal Claude",
+            let c1 = store.add(AIAccount(provider: .claude, customDisplayName: "Personal Claude",
                                          credentialSource: .claudeCodeKeychain,
                                          resetOverrides: ResetOverrides(
                                             preferProviderReset: true,
                                             weekly: WeeklyResetRule(weekday: 2, hour: 2, minute: 0))))
-            let c2 = store.add(AIAccount(provider: .claude, displayName: "Work Claude",
+            let c2 = store.add(AIAccount(provider: .claude, customDisplayName: "Work Claude",
                                          credentialSource: .appKeychain(id: UUID().uuidString),
                                          resetOverrides: ResetOverrides(
                                             preferProviderReset: true,
                                             weekly: WeeklyResetRule(weekday: 2, hour: 7, minute: 0))))
-            let o1 = store.add(AIAccount(provider: .openAI, displayName: "Business Premium",
+            let o1 = store.add(AIAccount(provider: .openAI, customDisplayName: "Business Premium",
                                          credentialSource: .codexDefault))
-            let o2 = store.add(AIAccount(provider: .openAI, displayName: "Personal Plus",
+            let o2 = store.add(AIAccount(provider: .openAI, customDisplayName: "Personal Plus",
                                          credentialSource: .file(path: "/Users/example/.codex-personal/auth.json")))
 
             expectEqual(store.accounts.count, 4)
@@ -214,17 +214,17 @@ func runPresentationTests() {
         test("the whole account list survives a restart with its topology intact") {
             let defaults = scratchDefaults()
             let first = AccountStore(defaults: defaults)
-            _ = first.add(AIAccount(provider: .claude, displayName: "Personal Claude",
+            _ = first.add(AIAccount(provider: .claude, customDisplayName: "Personal Claude",
                                     credentialSource: .claudeCodeKeychain,
                                     resetOverrides: ResetOverrides(preferProviderReset: true,
                                                                    weekly: WeeklyResetRule(weekday: 2, hour: 2, minute: 0))))
-            _ = first.add(AIAccount(provider: .claude, displayName: "Work Claude",
+            _ = first.add(AIAccount(provider: .claude, customDisplayName: "Work Claude",
                                     credentialSource: .appKeychain(id: "abc"),
                                     resetOverrides: ResetOverrides(preferProviderReset: true,
                                                                    weekly: WeeklyResetRule(weekday: 2, hour: 7, minute: 0))))
-            _ = first.add(AIAccount(provider: .openAI, displayName: "Business Premium",
+            _ = first.add(AIAccount(provider: .openAI, customDisplayName: "Business Premium",
                                     credentialSource: .codexDefault))
-            _ = first.add(AIAccount(provider: .openAI, displayName: "Personal Plus",
+            _ = first.add(AIAccount(provider: .openAI, customDisplayName: "Personal Plus",
                                     credentialSource: .file(path: "/Users/example/.codex-personal/auth.json")))
 
             let reopened = AccountStore(defaults: defaults)

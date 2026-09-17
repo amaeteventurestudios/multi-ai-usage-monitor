@@ -1,0 +1,22 @@
+{
+  "account": {
+    "uuid": "00000000-0000-4000-8000-00000000aaaa",
+    "full_name": "Example Person",
+    "display_name": "Example",
+    "email": "user@example.com",
+    "has_claude_max": false,
+    "has_claude_pro": true,
+    "created_at": "2024-01-01T00:00:00.000000Z"
+  },
+  "organization": {
+    "uuid": "00000000-0000-4000-8000-00000000bbbb",
+    "name": "Example Org",
+    "organization_type": "claude_pro",
+    "rate_limit_tier": "default_claude_ai"
+  },
+  "application": {
+    "uuid": "00000000-0000-4000-8000-00000000cccc",
+    "name": "Claude Code",
+    "slug": "claude-code"
+  }
+}

@@ -12,7 +12,7 @@ func runAccountTests() {
             ]
             for source in sources {
                 let original = AIAccount(provider: source == .codexDefault ? .openAI : .claude,
-                                         displayName: "Example",
+                                         customDisplayName: "Example",
                                          enabled: false,
                                          order: 3,
                                          credentialSource: source,
@@ -39,9 +39,9 @@ func runAccountTests() {
 
         test("two accounts on the same provider coexist independently") {
             let store = AccountStore(defaults: scratchDefaults())
-            let a = store.add(AIAccount(provider: .claude, displayName: "Personal Claude",
+            let a = store.add(AIAccount(provider: .claude, customDisplayName: "Personal Claude",
                                         credentialSource: .claudeCodeKeychain))
-            let b = store.add(AIAccount(provider: .claude, displayName: "Work Claude",
+            let b = store.add(AIAccount(provider: .claude, customDisplayName: "Work Claude",
                                         credentialSource: .appKeychain(id: UUID().uuidString)))
             expectEqual(store.accounts(for: .claude).count, 2)
             expect(a.id != b.id, "distinct identities")
@@ -51,22 +51,22 @@ func runAccountTests() {
 
         test("adding a second Claude account leaves the first's credential source alone") {
             let store = AccountStore(defaults: scratchDefaults())
-            let first = store.add(AIAccount(provider: .claude, displayName: "One",
+            let first = store.add(AIAccount(provider: .claude, customDisplayName: "One",
                                             credentialSource: .claudeCodeKeychain))
-            _ = store.add(AIAccount(provider: .claude, displayName: "Two",
+            _ = store.add(AIAccount(provider: .claude, customDisplayName: "Two",
                                     credentialSource: .appKeychain(id: UUID().uuidString)))
             expectEqual(store.account(id: first.id)?.credentialSource, .claudeCodeKeychain)
         }
 
         test("badges number accounts only when a provider has more than one") {
             let store = AccountStore(defaults: scratchDefaults())
-            let solo = store.add(AIAccount(provider: .openAI, displayName: "Business",
+            let solo = store.add(AIAccount(provider: .openAI, customDisplayName: "Business",
                                            credentialSource: .codexDefault))
             expectEqual(store.badge(for: solo), "G")
 
-            let c1 = store.add(AIAccount(provider: .claude, displayName: "One",
+            let c1 = store.add(AIAccount(provider: .claude, customDisplayName: "One",
                                          credentialSource: .claudeCodeKeychain))
-            let c2 = store.add(AIAccount(provider: .claude, displayName: "Two",
+            let c2 = store.add(AIAccount(provider: .claude, customDisplayName: "Two",
                                          credentialSource: .appKeychain(id: "x")))
             expectEqual(store.badge(for: c1), "C1")
             expectEqual(store.badge(for: c2), "C2")
@@ -98,12 +98,12 @@ func runAccountTests() {
         test("accounts persist across a restart of the store") {
             let defaults = scratchDefaults()
             let first = AccountStore(defaults: defaults)
-            _ = first.add(AIAccount(provider: .claude, displayName: "Personal Claude",
+            _ = first.add(AIAccount(provider: .claude, customDisplayName: "Personal Claude",
                                     credentialSource: .claudeCodeKeychain,
                                     resetOverrides: ResetOverrides(
                                         preferProviderReset: true,
                                         weekly: WeeklyResetRule(weekday: 2, hour: 2, minute: 0))))
-            _ = first.add(AIAccount(provider: .openAI, displayName: "Business Premium",
+            _ = first.add(AIAccount(provider: .openAI, customDisplayName: "Business Premium",
                                     credentialSource: .codexDefault))
 
             let reopened = AccountStore(defaults: defaults)
@@ -120,13 +120,15 @@ func runAccountTests() {
             expectEqual(store.accounts.count, 0)
         }
 
-        test("rename ignores an empty name") {
+        test("renaming sets a custom label, and clearing it restores the detected name") {
             let store = AccountStore(defaults: scratchDefaults())
-            let a = store.add(makeAccount(.claude, name: "Original"))
-            store.rename(id: a.id, to: "   ")
+            let a = store.add(makeAccount(.claude, name: "Original", email: "user@example.com"))
             expectEqual(store.account(id: a.id)?.displayName, "Original")
             store.rename(id: a.id, to: "  Renamed ")
             expectEqual(store.account(id: a.id)?.displayName, "Renamed")
+            store.rename(id: a.id, to: "   ")
+            expectEqual(store.account(id: a.id)?.displayName, "Claude (user@example.com)",
+                        "an empty name hands naming back to the detected identity")
         }
 
         test("enable and disable are per account") {
@@ -151,7 +153,7 @@ func runAccountTests() {
 
         test("defaults are the documented ones") {
             let s = AppSettings(defaults: scratchDefaults())
-            expectEqual(s.backgroundOpacity, 0.90)
+            expectEqual(s.backgroundOpacity, 0.95)
             expectEqual(s.refreshIntervalMinutes, 5)
             expectEqual(s.menuBarSummaryMode, .compact)
             expectEqual(s.warningThresholdPercent, 90)
@@ -209,10 +211,10 @@ func runAccountTests() {
         test("background opacity is clamped so the app can never be made unreadable") {
             let s = AppSettings(defaults: scratchDefaults())
             s.backgroundOpacity = 0.0
-            expectEqual(s.backgroundOpacity, 0.60, "the floor holds")
+            expectEqual(s.backgroundOpacity, 0.70, "the floor holds")
             s.backgroundOpacity = 5.0
             expectEqual(s.backgroundOpacity, 1.00, "and so does the ceiling")
-            expectEqual(AppSettings.clampBackgroundOpacity(.nan), 0.90,
+            expectEqual(AppSettings.clampBackgroundOpacity(.nan), 0.95,
                         "a nonsense value falls back to the default")
             expectEqual(AppSettings.clampBackgroundOpacity(0.9), 0.9)
         }
@@ -220,7 +222,7 @@ func runAccountTests() {
         test("a value written straight into defaults out of range is still clamped on read") {
             let defaults = scratchDefaults()
             defaults.set(0.1, forKey: "display.backgroundOpacity")
-            expectEqual(AppSettings(defaults: defaults).backgroundOpacity, 0.60)
+            expectEqual(AppSettings(defaults: defaults).backgroundOpacity, 0.70)
         }
 
         test("resetting local settings restores defaults") {
@@ -231,7 +233,7 @@ func runAccountTests() {
             s.resetToDefaults()
             expectEqual(s.warningThresholdPercent, 90)
             expectEqual(s.menuBarSummaryMode, .compact)
-            expectEqual(s.backgroundOpacity, 0.90)
+            expectEqual(s.backgroundOpacity, 0.95)
         }
     }
 
@@ -255,8 +257,7 @@ func runAccountTests() {
 
             let accounts = LegacyMigration.accounts(
                 legacy: legacy,
-                detected: DetectedCredentials(claudeCodeKeychain: true, claudeSuggestedName: nil,
-                                              codexDefault: true, codexSuggestedName: nil))
+                detected: DetectedCredentials(claudeCodeKeychain: true, codexDefault: true))
             expectEqual(accounts.count, 2)
             expectEqual(accounts[0].provider, .claude)
             expectEqual(accounts[0].credentialSource, .claudeCodeKeychain)
@@ -276,8 +277,7 @@ func runAccountTests() {
             let legacy = LegacySettingsSnapshot.read(from: legacyDefaults)
             let accounts = LegacyMigration.accounts(
                 legacy: legacy,
-                detected: DetectedCredentials(claudeCodeKeychain: false, claudeSuggestedName: nil,
-                                              codexDefault: false, codexSuggestedName: nil))
+                detected: DetectedCredentials(claudeCodeKeychain: false, codexDefault: false))
             expectEqual(accounts.count, 1)
             expectEqual(accounts[0].credentialSource, .file(path: "/Users/example/.codex/auth.json"))
         }
@@ -285,31 +285,30 @@ func runAccountTests() {
         test("no credentials on this Mac means no invented accounts") {
             let accounts = LegacyMigration.accounts(
                 legacy: nil,
-                detected: DetectedCredentials(claudeCodeKeychain: false, claudeSuggestedName: nil,
-                                              codexDefault: false, codexSuggestedName: nil))
+                detected: DetectedCredentials(claudeCodeKeychain: false, codexDefault: false))
             expectEqual(accounts.count, 0)
         }
 
         test("migration sets no reset override — it never invents a schedule") {
             let accounts = LegacyMigration.accounts(
                 legacy: nil,
-                detected: DetectedCredentials(claudeCodeKeychain: true, claudeSuggestedName: nil,
-                                              codexDefault: true, codexSuggestedName: nil))
+                detected: DetectedCredentials(claudeCodeKeychain: true, codexDefault: true))
             for a in accounts {
                 expectNil(a.resetOverrides.weekly, "\(a.displayName) must have no baked-in schedule")
                 expect(a.resetOverrides.preferProviderReset)
             }
         }
 
-        test("a detected identity names the account better than a counter does") {
+        test("migration names nothing — identity detection does that later") {
             let accounts = LegacyMigration.accounts(
                 legacy: nil,
-                detected: DetectedCredentials(claudeCodeKeychain: true,
-                                              claudeSuggestedName: "Claude (pro)",
-                                              codexDefault: true,
-                                              codexSuggestedName: "OpenAI (Business Prolite)"))
-            expectEqual(accounts[0].displayName, "Claude (pro)")
-            expectEqual(accounts[1].displayName, "OpenAI (Business Prolite)")
+                detected: DetectedCredentials(claudeCodeKeychain: true, codexDefault: true))
+            for a in accounts {
+                expectNil(a.customDisplayName, "no counter name is baked in")
+                expectNil(a.identity, "identity is discovered from the provider, not assumed")
+                expect(a.displayName.hasSuffix(AccountNaming.unidentifiedSuffix),
+                       "until then it says so plainly, got \(a.displayName)")
+            }
         }
     }
 }

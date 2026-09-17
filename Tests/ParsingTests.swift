@@ -157,13 +157,18 @@ func runParsingTests() {
         test("the account label carries the e-mail and a readable plan name") {
             let usage = try OpenAIUsageParser.parse(fixture("openai-usage.sample.json"),
                                                     account: makeAccount(.openAI), now: now, calendar: cal)
-            expectEqual(usage.accountLabel, "user@example.com · plan: Self Serve Business Prolite")
+            expectEqual(usage.accountLabel, "user@example.com · plan: Business",
+                        "the plan family is named; the tier is not invented")
         }
 
-        test("known plan identifiers get their proper names, unknown ones are title-cased") {
+        test("plan identifiers are named by family, never invented") {
             expectEqual(OpenAIUsageParser.planDisplayName("plus"), "Plus")
             expectEqual(OpenAIUsageParser.planDisplayName("pro"), "Pro")
             expectEqual(OpenAIUsageParser.planDisplayName("some_new_plan"), "Some New Plan")
+            expectEqual(OpenAIIdentityParser.planLabel("self_serve_business_prolite"), "Business",
+                        "the family is certain; \"prolite\" is not renamed to something plausible")
+            expectNil(OpenAIIdentityParser.planLabel("mystery_tier"),
+                      "an unrecognised plan contributes no label at all")
         }
 
         test("a credit balance with no cap becomes a note, not a bar") {
