@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# No secrets are used, required, or available to this workflow. It never signs
+# in to Claude or OpenAI: the test suite runs entirely against sanitised
+# fixtures committed to the repository.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          sw_vers
+
+      - name: Run tests
+        run: ./test.sh
+
+      - name: Build the app
+        run: ./build.sh
+
+      - name: Verify the deployment target is still macOS 12
+        # The runner is newer than the minimum macOS this project supports, so
+        # CI cannot prove runtime behaviour on Monterey — see
+        # docs/KNOWN_LIMITATIONS.md. What it *can* prove is that the binary is
+        # still built for macOS 12.0, which is what silently regresses.
+        run: |
+          BIN="Multi AI Usage Monitor.app/Contents/MacOS/MultiAIUsageMonitor"
+          echo "Architectures: $(lipo -archs "$BIN")"
+          MINOS=$(vtool -show-build "$BIN" | awk '/minos/ {print $2; exit}')
+          echo "Minimum OS version: $MINOS"
+          if [ "$MINOS" != "12.0" ]; then
+            echo "::error::Deployment target regressed to $MINOS (expected 12.0)"
+            exit 1
+          fi
+          plutil -p "Multi AI Usage Monitor.app/Contents/Info.plist" \
+            | grep -q '"LSMinimumSystemVersion" => "12.0"' \
+            || { echo "::error::Info.plist LSMinimumSystemVersion is not 12.0"; exit 1; }
+
+      - name: Check for committed credentials
+        # A cheap net for the mistake that matters most. Tests/ is excluded:
+        # that is where sanitised fixtures and the deliberately credential-shaped
+        # strings used to test redaction live, and both are reviewed by hand.
+        run: |
+          set +e
+          PATTERNS='(access_token|refresh_token|id_token)"[[:space:]]*:[[:space:]]*"[A-Za-z0-9._-]{20,}|sk-[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+          MATCHES=$(git grep -InE "$PATTERNS" -- . ':!Tests' ':!.github/workflows')
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Possible credential material committed:"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "No credential-shaped strings found outside sanitised fixtures."
