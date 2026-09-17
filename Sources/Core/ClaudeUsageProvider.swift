@@ -440,6 +440,11 @@ enum ClaudeIdentityParser {
         let email = (account?["email"] as? String) ?? (obj["email_address"] as? String)
         let uuid = (account?["uuid"] as? String) ?? (obj["uuid"] as? String)
         let orgName = organization?["name"] as? String
+        // Captured so an organisation auto-named after the account holder can be
+        // recognised and left out of the subtitle.
+        let personName = (account?["full_name"] as? String)
+            ?? (account?["display_name"] as? String)
+            ?? (obj["full_name"] as? String)
 
         // Plan, in order of how directly the provider states it.
         let rawPlan = (organization?["organization_type"] as? String)
@@ -454,6 +459,7 @@ enum ClaudeIdentityParser {
         return AccountIdentity(email: email,
                                providerAccountID: uuid,
                                organizationName: orgName,
+                               personName: personName,
                                planRaw: rawPlan,
                                planLabel: label,
                                verified: email != nil || uuid != nil,

@@ -8,6 +8,7 @@ func runIdentityTests() {
             expectEqual(identity.email, "user@example.com")
             expectEqual(identity.providerAccountID, "00000000-0000-4000-8000-00000000aaaa")
             expectEqual(identity.organizationName, "Example Org")
+            expectEqual(identity.personName, "Example Person")
             expectEqual(identity.planLabel, "Pro")
             expect(identity.verified, "the provider said so")
             expect(identity.isIdentified)
@@ -112,6 +113,44 @@ func runIdentityTests() {
                                           planLabel: "Max", verified: true)
             expectEqual(withOrg.subtitle, "Plan: Max · Example Org")
             expectNil(makeIdentity(email: "user@example.com").subtitle)
+        }
+
+        test("an organisation is shown only when naming it says something") {
+            func org(_ name: String?, email: String? = "user@example.com",
+                     person: String? = nil) -> String? {
+                AccountIdentity(email: email, organizationName: name, personName: person,
+                                verified: true).usefulOrganizationName
+            }
+            // A real shared organisation earns its place.
+            expectEqual(org("Example Industries"), "Example Industries")
+
+            // Initials tell you nothing you did not already know. Anthropic
+            // returns these for an individual account's auto-created org.
+            expectNil(org("AU"), "two initials are not a readable name")
+            expectNil(org("ABC"))
+
+            // Auto-generated personal organisations, under either convention.
+            expectNil(org("Personal org for user@example.com"))
+            expectNil(org("personal org"))
+
+            // An organisation that just echoes the account's own address.
+            expectNil(org("user@example.com"))
+            expectNil(org("user"), "the local part is already the account name")
+
+            // An organisation named after the account holder.
+            expectNil(org("Example Person", person: "Example Person"))
+            expectNil(org("example person", person: "Example Person"), "case does not rescue it")
+
+            expectNil(org(nil))
+            expectNil(org("   "))
+        }
+
+        test("the cryptic organisation is dropped from the subtitle, the plan is kept") {
+            let initials = AccountIdentity(email: "user@example.com", organizationName: "AU",
+                                           personName: "AU", planLabel: "Pro", verified: true)
+            expectEqual(initials.subtitle, "Plan: Pro", "no stray “AU” beside the account")
+            expectEqual(initials.organizationName, "AU",
+                        "but the raw value survives for diagnostics")
         }
 
         test("names this app generated for itself give way to a real identity") {

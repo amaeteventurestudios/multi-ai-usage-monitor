@@ -391,6 +391,46 @@ func runDualBarTests() {
         }
     }
 
+    suite("A window the provider does not report stays absent") {
+
+        test("a null secondary window produces no five-hour metric at all") {
+            var obj = fixture("openai-usage.sample.json")
+            var rl = obj["rate_limit"] as! [String: Any]
+            rl["secondary_window"] = NSNull()
+            obj["rate_limit"] = rl
+            let usage = try OpenAIUsageParser.parse(obj, account: makeAccount(.openAI))
+            expectNil(usage.metric(for: .fiveHour),
+                      "an unreported window is absent, never a confident 0%")
+            expectNotNil(usage.metric(for: .weekly), "and the reported one is unaffected")
+        }
+
+        test("the menu bar draws one row for that account, not an empty second one") {
+            var obj = fixture("openai-usage.sample.json")
+            var rl = obj["rate_limit"] as! [String: Any]
+            rl["secondary_window"] = NSNull()
+            obj["rate_limit"] = rl
+
+            let store = AccountStore(defaults: scratchDefaults())
+            let account = store.add(AIAccount(provider: .openAI, customShortName: "Business",
+                                              credentialSource: .appKeychain(id: "k")))
+            let usage = try OpenAIUsageParser.parse(obj, account: account)
+            let states: [UUID: AccountRuntimeState] = [account.id: AccountRuntimeState(
+                usage: usage, error: nil, isRefreshing: false, lastSuccess: Date())]
+
+            let sources = MenuBarLayout.sources(accounts: store.accounts, states: states)
+            expectNil(sources[0].fiveHour, "no five-hour row is invented")
+            expectEqual(sources[0].weekly?.percent, 89)
+
+            let cells = MenuBarLayout.cells(sources: sources, mode: .perAccount,
+                                            format: .detailed, usageDisplay: .dualBars)
+            expectEqual(cells[0].rows.count, 1, "one window reported, one row drawn")
+            expectEqual(cells[0].rows[0].role, .weekly)
+            expectEqual(MenuBarLayout.textTitle(sources: sources, mode: .perAccount,
+                                                format: .detailed, usageDisplay: .textOnly),
+                        "O Business W89%")
+        }
+    }
+
     suite("Menu bar sources come from real account state") {
 
         test("both windows are read from the account's own metrics") {
