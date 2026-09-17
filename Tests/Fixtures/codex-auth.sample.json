@@ -1,0 +1,10 @@
+{
+  "OPENAI_API_KEY": null,
+  "tokens": {
+    "id_token": "PLACEHOLDER.eyJlbWFpbCI6InVzZXJAZXhhbXBsZS5jb20iLCJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9wbGFuX3R5cGUiOiJwbHVzIn19.PLACEHOLDER",
+    "access_token": "PLACEHOLDER.eyJleHAiOjQxMDI0NDQ4MDB9.PLACEHOLDER",
+    "refresh_token": "not-a-real-refresh-token",
+    "account_id": "00000000-0000-4000-8000-000000000000"
+  },
+  "last_refresh": "2026-06-15T10:00:00Z"
+}
