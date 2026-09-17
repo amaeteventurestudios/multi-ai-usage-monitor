@@ -1,9 +1,56 @@
-AI Usage Monitor
-Copyright 2026 Georgios Stavropoulos
+Multi AI Usage Monitor
+Copyright 2026 Amaete Venture Studios
+
+This product includes software developed as AI Usage Monitor
+(https://github.com/stavrop/ai-usage-monitor),
+Copyright 2026 Georgios Stavropoulos.
 
 Licensed under the Apache License, Version 2.0. See LICENSE for details.
 
+--------------------------------------------------------------------------
+Licensing structure
+--------------------------------------------------------------------------
+
+Multi AI Usage Monitor is a derivative work of AI Usage Monitor, which is
+licensed under the Apache License 2.0. The Apache License requires that this
+derivative work keep the upstream copyright notice, the LICENSE text and this
+NOTICE file, and that modified files carry prominent notice of the change.
+
+That means the project as a whole remains under the Apache License 2.0. It is
+not, and cannot be, relicensed under the MIT License without permission from
+the upstream copyright holder, because the upstream code it builds on is not
+ours to relicense.
+
+Contributions written for this project are copyright 2026 Amaete Venture
+Studios and are released under the same Apache License 2.0, so the whole
+project stays under one clear, permissive licence.
+
+--------------------------------------------------------------------------
+Notice of modification (Apache License 2.0, section 4(b))
+--------------------------------------------------------------------------
+
+This project modifies the upstream work substantially. In particular it:
+
+  * restructures a single-file application into separate core, provider and
+    user-interface source files under Sources/;
+  * replaces the one-credential-per-provider model with first-class accounts,
+    so several accounts on the same provider can be monitored at once;
+  * adds per-account credential sources, reset schedules, notification
+    thresholds, error isolation and stale-data handling;
+  * renames the application from "AI Usage Monitor" to
+    "Multi AI Usage Monitor" and changes its bundle identifier;
+  * adds a test suite, documentation and continuous integration.
+
+Portions of the credential reading, token refresh, response parsing and
+progress-bar drawing derive from the upstream project and remain the copyright
+of its author.
+
+--------------------------------------------------------------------------
+Trademarks
+--------------------------------------------------------------------------
+
 This project is an independent, unofficial utility. It is NOT affiliated with,
-endorsed by, or sponsored by Anthropic. "Claude", "Claude Code", and "Anthropic"
-are trademarks of Anthropic PBC, used here only nominatively to describe what
-this software interoperates with.
+endorsed by, or sponsored by Anthropic or OpenAI. "Claude", "Claude Code" and
+"Anthropic" are trademarks of Anthropic PBC; "ChatGPT", "Codex" and "OpenAI"
+are trademarks of OpenAI. They are used here only nominatively, to describe
+what this software interoperates with.
