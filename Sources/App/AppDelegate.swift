@@ -81,9 +81,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu bar title
 
+    /// Draw the status item.
+    ///
+    /// Bars are an image; text modes stay text. Either way the button carries an
+    /// accessibility label describing every value in words, because colour must
+    /// never be the only signal.
     private func renderTitle() {
-        let title = coordinator.menuBarTitle() ?? (AppInfo.menuHeading + " …")
-        DispatchQueue.main.async { self.statusItem.button?.title = title }
+        let usesBars = settings.menuBarSummaryMode != .iconOnly
+            && settings.usageDisplay != .textOnly
+        let cells = usesBars ? coordinator.menuBarCells() : []
+        let title = coordinator.menuBarTitle()
+        let spoken = cells.isEmpty ? title : cells.map { $0.accessibilityText }.joined(separator: "; ")
+
+        DispatchQueue.main.async {
+            guard let button = self.statusItem.button else { return }
+            if usesBars,
+               let image = MenuBarRenderer.image(cells: cells,
+                                                 barLength: self.settings.miniBarLength,
+                                                 showPercentages: self.settings.showPercentages) {
+                button.image = image
+                button.title = ""
+                self.statusItem.length = image.size.width + 6
+            } else {
+                button.image = nil
+                button.title = title ?? (AppInfo.menuHeading + " …")
+                self.statusItem.length = NSStatusItem.variableLength
+            }
+            button.setAccessibilityLabel(spoken ?? AppInfo.name)
+            button.toolTip = spoken
+        }
     }
 
     // MARK: - Dropdown

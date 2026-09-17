@@ -61,9 +61,9 @@ final class UsageRowView: NSView {
     static func height(for metric: UsageMetric) -> CGFloat {
         switch metric.state {
         case .available, .stale:
-            // label + bar + (count line) + reset line
+            // label + bar + (count or remaining line) + reset line
             var h: CGFloat = 46
-            if metric.usedCount != nil { h += 15 }
+            if metric.usedCount != nil || metric.remainingPercent != nil { h += 15 }
             if metric.resetsAt != nil || metric.detail != nil { h += 15 }
             return h
         default:
@@ -128,6 +128,13 @@ final class UsageRowView: NSView {
             if let counts = Fmt.countLine(used: metric.usedCount, limit: metric.limitCount) {
                 draw(counts, at: NSPoint(x: padL, y: y), size: 11, weight: .regular,
                      color: .secondaryLabelColor)
+                y += 15
+            } else if let remaining = metric.remainingPercent {
+                // "used" is the number that drives decisions; "left" is the one
+                // people actually ask about. Show both, so neither has to be
+                // worked out in your head.
+                draw("\(Int(remaining.rounded()))% left", at: NSPoint(x: padL, y: y),
+                     size: 11, weight: .regular, color: .secondaryLabelColor)
                 y += 15
             }
 
