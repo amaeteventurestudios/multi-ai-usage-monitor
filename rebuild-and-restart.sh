@@ -2,23 +2,23 @@
 # Rebuild the menu bar app and restart it cleanly.
 #
 # Overwriting the app binary while an instance is still running invalidates its
-# (ad-hoc) code signature, so macOS kills the process with
-# OS_REASON_CODESIGNING on the next launch. Avoid that by STOPPING the running
-# instance first, then rebuilding, then starting it again.
+# (ad-hoc) code signature, so macOS kills the process with OS_REASON_CODESIGNING
+# on the next launch. Avoid that by STOPPING the running instance first, then
+# rebuilding, then starting it again.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-LABEL="com.local.claudeusage"
+LABEL="com.amaeteventurestudios.multi-ai-usage-monitor"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
-APP="ClaudeUsage.app"
+APP="Multi AI Usage Monitor.app"
 
 echo "==> Stopping any running instance…"
 if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
     launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 fi
 # Belt-and-suspenders: kill any stray copy launched outside launchd.
-pkill -f "$APP/Contents/MacOS/ClaudeUsage" 2>/dev/null || true
+pkill -f "$APP/Contents/MacOS/MultiAIUsageMonitor" 2>/dev/null || true
 sleep 1
 
 echo "==> Building…"

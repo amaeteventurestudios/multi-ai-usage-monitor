@@ -1,5 +1,5 @@
 // Renders the app icon (1024x1024 PNG) with CoreGraphics — an original "usage
-// gauge" mark in Claude's warm clay orange. Run:  swift tools/make_icon.swift <out.png>
+// gauge" mark in Claude's warm clay orange. Run:  swift tools/make_icon.swift <out.png>  (then: iconutil to build Resources/AppIcon.icns)
 import AppKit
 
 let size = 1024
