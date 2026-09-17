@@ -359,3 +359,88 @@ something changed, which is when you most need to find them. And a row of
 e-mail addresses in the menu bar is unreadable at that size and visible to
 anyone near the screen; the dropdown carries the full identity, which is where
 identity matters.
+
+
+---
+
+## 19. The menu bar is drawn, not spelled with block characters
+
+**Problem.** Two stacked usage bars per account have to fit inside a 22-point
+menu bar, in colour, at predictable widths.
+
+**Options.** (a) Unicode block characters in the status item's title. (b) Draw
+into an `NSImage` and set it as the button's image. (c) A custom `NSView` in the
+status item.
+
+**Decision.** (b), via `NSImage(size:flipped:drawingHandler:)`.
+
+**Reason.** Block characters give no control over width, render differently
+depending on the installed fonts, and cannot show two rows or per-window colour.
+(c) works but invites layout and event-handling surprises inside the status bar
+for no gain here. The drawing handler runs at draw time inside the current
+appearance, so `NSColor.labelColor` and friends resolve correctly in both light
+and dark menu bars — and it predates macOS 12 comfortably.
+
+**Consequences.** The status item's width is computed from measured text, so it
+is exact. Text-only and Icon Only modes keep using the button's title, which is
+simpler and lets the system handle truncation.
+
+---
+
+## 20. One layout model, shared by the menu bar and its preview
+
+**Problem.** A settings preview that formats things itself will eventually
+disagree with the real menu bar.
+
+**Decision.** `MenuBarLayout` produces the cells; `MenuBarRenderer` draws them.
+The preview calls exactly the same two, on the same live data.
+
+**Reason.** A preview that can lie is worse than no preview. This way a
+formatting change cannot reach one without the other, and the layout rules stay
+testable without a screen.
+
+---
+
+## 21. Both providers use one vocabulary: "5-hour" and "Weekly"
+
+**Problem.** Claude's short window was called "Session" and OpenAI's windows were
+prefixed "Codex", so the two providers could not be compared at a glance.
+
+**Decision.** Name both providers' windows "5-hour" and "Weekly", classified from
+the window length the provider reports. Move the Codex qualifier to the detail
+line under the OpenAI bars.
+
+**Reason.** "Session" says nothing about how long it lasts, and the whole point
+of the dashboard is comparing accounts across providers. The qualifier still
+matters — these OpenAI windows govern Codex requests, not ChatGPT messages — so
+it is stated rather than dropped, just not in a place that makes every label
+provider-specific again.
+
+**Consequences.** The role is data-derived, so a provider that changes a window's
+length reclassifies itself rather than being mislabelled.
+
+---
+
+## 22. Provider mode takes the worst account per *window*
+
+**Problem.** In Provider mode, what are a provider's two figures when it has
+several accounts?
+
+**Decision.** The highest usage for each window independently, so a provider's
+five-hour figure and its weekly figure may come from different accounts.
+
+**Reason.** The question Provider mode answers is "how constrained is this
+provider right now", and that is constrained-per-window. Taking both figures from
+whichever account is worst overall would hide a second account that is about to
+run out of weekly allowance.
+
+---
+
+## 23. `O` for OpenAI, with `G` reserved
+
+**Problem.** OpenAI's badge was `G`, presumably for GPT.
+
+**Decision.** `O` for OpenAI. `G` is reserved for a future Gemini adapter.
+
+**Reason.** A badge people have learned and then have to relearn is a worse cost
+than changing it now, while the project has one user.
