@@ -38,6 +38,23 @@ final class AccountOnboardingController: NSObject {
     private var chosenFilePath: String?
     /// Filled in once detection succeeds.
     private var detected: (identity: AccountIdentity, source: CredentialSource)?
+
+    /// What the currently selected auto-detect method resolves to right now.
+    ///
+    /// Resolved *before* the user can continue, so nobody imports a credential
+    /// without first seeing which account it actually is. That matters because
+    /// these credentials belong to a specific tool's sign-in — Claude Code's
+    /// terminal login, not claude.ai in a browser — and the two are easy to
+    /// assume are the same.
+    private enum Preflight {
+        case checking
+        case resolved(AccountIdentity)
+        case failed(AccountError)
+    }
+    private var preflight: Preflight = .checking
+    /// Generation counter so a slow check that the user has already moved past
+    /// cannot overwrite a newer result.
+    private var preflightToken = 0
     /// Local label, offered only when the provider would not name the account.
     private var fallbackLabelField: NSTextField?
 
@@ -74,6 +91,7 @@ final class AccountOnboardingController: NSObject {
         ])
         sheet.contentView = container
         showChooseStep()
+        runPreflight()
         parent.beginSheet(sheet, completionHandler: nil)
         WindowBackground.apply(opacity: coordinator.settings.backgroundOpacity, to: sheet)
     }
@@ -139,35 +157,158 @@ final class AccountOnboardingController: NSObject {
                              + "are all kept.", size: 11, color: .secondaryLabelColor))
         }
 
-        for (i, method) in methods.enumerated() {
-            let radio = NSButton(radioButtonWithTitle: method.title, target: self,
-                                 action: #selector(methodSelected(_:)))
-            radio.tag = i
-            radio.state = i == selectedMethodIndex ? .on : .off
-            radio.font = NSFont.systemFont(ofSize: 13, weight: method.isPrimary ? .semibold : .regular)
-            views.append(radio)
+        let method = currentMethod()
+        if method.supportsPreflight {
+            views.append(contentsOf: preflightViews(for: method))
+        } else {
+            views.append(contentsOf: fileChoiceViews(for: method))
+        }
 
-            let detail = label(method.detail, size: 11, color: .secondaryLabelColor)
-            views.append(detail)
+        // The other ways in, kept out of the way of the everyday one.
+        let alternatives = methods.enumerated().filter { $0.offset != selectedMethodIndex }
+        if !alternatives.isEmpty {
+            let divider = NSBox(); divider.boxType = .separator
+            divider.translatesAutoresizingMaskIntoConstraints = false
+            views.append(divider)
+            divider.widthAnchor.constraint(equalToConstant: 440).isActive = true
 
-            if method.requiresFileChoice && i == selectedMethodIndex {
-                let chooser = button("Choose File…", #selector(chooseFile))
-                chooser.controlSize = .small
-                let path = chosenFilePath.map { ($0 as NSString).abbreviatingWithTildeInPath }
-                views.append(hstack([chooser,
-                                     label(path ?? "No file chosen", size: 11,
-                                           color: .secondaryLabelColor, wrap: 280)]))
+            for (i, alternative) in alternatives {
+                let link = NSButton(title: alternative.title, target: self,
+                                    action: #selector(methodSelected(_:)))
+                link.tag = i
+                link.bezelStyle = .inline
+                link.isBordered = false
+                link.contentTintColor = .linkColor
+                link.font = NSFont.systemFont(ofSize: 11)
+                views.append(link)
             }
         }
 
-        views.append(hstack([button("Cancel", #selector(cancelTapped)),
-                             button("Continue", #selector(detectTapped), primary: true)]))
+        views.append(hstack([button("Cancel", #selector(cancelTapped))]))
         setBody(views)
+    }
+
+    /// The account this method resolves to, shown before anything is imported.
+    private func preflightViews(for method: CredentialMethod) -> [NSView] {
+        var views: [NSView] = []
+        if let heading = method.preflightHeading {
+            views.append(label(heading, size: 12, bold: true))
+        }
+
+        switch preflight {
+        case .checking:
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.startAnimation(nil)
+            views.append(hstack([spinner, label("Checking…", size: 12,
+                                                color: .secondaryLabelColor, wrap: nil)]))
+
+        case .resolved(let identity):
+            views.append(label(identity.email ?? "Signed in, but this account is not named",
+                               size: 15, bold: true))
+            if let plan = identity.planLabel {
+                views.append(label("Plan: \(plan)", size: 12, color: .secondaryLabelColor))
+            }
+            if let org = identity.organizationName, org != identity.email {
+                views.append(label(org, size: 11, color: .secondaryLabelColor))
+            }
+            views.append(label("Credential source: \(method.sourceSummary)",
+                               size: 11, color: .tertiaryLabelColor))
+
+        case .failed(let error):
+            views.append(label(error.message, size: 12, color: .systemOrange))
+            if let recovery = error.recovery {
+                views.append(label(recovery, size: 11, color: .secondaryLabelColor))
+            }
+        }
+
+        // Always visible, in every state: what this credential actually is.
+        if let disclaimer = method.disclaimer {
+            views.append(label(disclaimer, size: 11, color: .secondaryLabelColor))
+        }
+
+        if case .resolved = preflight, let instruction = method.switchInstruction {
+            views.append(label("If this is not the account you want: \(instruction)",
+                               size: 11, color: .secondaryLabelColor))
+        }
+
+        var buttons: [NSView] = []
+        if case .resolved = preflight {
+            buttons.append(button("Use This Account", #selector(usePreflightAccount), primary: true))
+        }
+        let again = button("Check Again", #selector(checkAgainTapped))
+        again.isEnabled = !isChecking
+        buttons.append(again)
+        views.append(hstack(buttons))
+        return views
+    }
+
+    private var isChecking: Bool {
+        if case .checking = preflight { return true }
+        return false
+    }
+
+    /// The advanced path: pick a credential file, then continue.
+    private func fileChoiceViews(for method: CredentialMethod) -> [NSView] {
+        var views: [NSView] = [label(method.title, size: 12, bold: true),
+                               label(method.detail, size: 11, color: .secondaryLabelColor)]
+        let chooser = button("Choose File…", #selector(chooseFile))
+        chooser.controlSize = .small
+        let path = chosenFilePath.map { ($0 as NSString).abbreviatingWithTildeInPath }
+        views.append(hstack([chooser,
+                             label(path ?? "No file chosen", size: 11,
+                                   color: .secondaryLabelColor, wrap: 280)]))
+        let cont = button("Continue", #selector(detectTapped), primary: true)
+        cont.isEnabled = chosenFilePath != nil
+        views.append(hstack([cont]))
+        return views
+    }
+
+    private func currentMethod() -> CredentialMethod {
+        methods[min(max(0, selectedMethodIndex), methods.count - 1)]
+    }
+
+    // MARK: - Preflight
+
+    /// Resolve who the selected method's credential belongs to.
+    private func runPreflight() {
+        let method = currentMethod()
+        guard method.supportsPreflight else { return }
+        preflightToken += 1
+        let token = preflightToken
+        preflight = .checking
+        showChooseStep()
+
+        ProviderRegistry.provider(for: mode.provider)
+            .discoverIdentity(source: method.source) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self = self, token == self.preflightToken else { return }
+                    switch result {
+                    case .success(let identity):
+                        self.preflight = .resolved(identity)
+                    case .failure(let error):
+                        self.preflight = .failed(error)
+                    }
+                    self.showChooseStep()
+                }
+            }
+    }
+
+    @objc private func checkAgainTapped() { runPreflight() }
+
+    /// The account has already been resolved, so go straight to confirmation
+    /// rather than asking the provider the same question twice.
+    @objc private func usePreflightAccount() {
+        guard case .resolved(let identity) = preflight else { return }
+        detected = (identity, currentMethod().source)
+        showConfirmStep(identity: identity)
     }
 
     @objc private func methodSelected(_ sender: NSButton) {
         selectedMethodIndex = sender.tag
         showChooseStep()
+        runPreflight()
     }
 
     @objc private func chooseFile() {
@@ -199,11 +340,7 @@ final class AccountOnboardingController: NSObject {
     }
 
     @objc private func detectTapped() {
-        guard let source = resolvedSource() else {
-            showChooseStep()
-            presentInline("Choose a credential file first.")
-            return
-        }
+        guard let source = resolvedSource() else { showChooseStep(); return }
         showDetectingStep()
         ProviderRegistry.provider(for: mode.provider)
             .discoverIdentity(source: source) { [weak self] result in
@@ -276,9 +413,12 @@ final class AccountOnboardingController: NSObject {
 
         if case .add = mode {
             views.append(label("The credential is copied into this app's own Keychain entry, so "
-                             + "you can sign a different account into \(toolName()) afterwards "
+                             + "you can sign \(toolName()) in to a different account afterwards "
                              + "and this one keeps reporting.",
                                size: 11, color: .secondaryLabelColor))
+        }
+        if let disclaimer = currentMethod().disclaimer {
+            views.append(label(disclaimer, size: 11, color: .secondaryLabelColor))
         }
 
         let saveTitle: String
@@ -289,8 +429,10 @@ final class AccountOnboardingController: NSObject {
         setBody(views)
     }
 
+    /// The tool whose credential this is — named exactly, never softened to
+    /// "Claude" or "ChatGPT", which would point at a different sign-in.
     private func toolName() -> String {
-        mode.provider == .claude ? "Claude Code" : "ChatGPT or Codex"
+        mode.provider == .claude ? "Claude Code" : "the ChatGPT app or Codex CLI"
     }
 
     private func previewName(identity: AccountIdentity) -> String {
@@ -311,13 +453,12 @@ final class AccountOnboardingController: NSObject {
         setBody(views)
     }
 
-    private func presentInline(_ message: String) {
-        body.addArrangedSubview(label("⚠︎ \(message)", size: 11, color: .systemOrange))
-    }
-
     // MARK: - Actions
 
-    @objc private func backTapped() { showChooseStep() }
+    @objc private func backTapped() {
+        showChooseStep()
+        runPreflight()
+    }
     @objc private func cancelTapped() { close() }
 
     @objc private func saveTapped() {

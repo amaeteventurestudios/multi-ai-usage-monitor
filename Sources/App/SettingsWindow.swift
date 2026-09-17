@@ -210,8 +210,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         accountsStack.addArrangedSubview(
             label("Adding an account copies the credential into this app's own Keychain entry "
                 + "and records who the provider says it belongs to. After that you can sign a "
-                + "different account into Claude Code, ChatGPT or Codex — and close the browser "
-                + "you signed in with — and every saved account here keeps reporting. "
+                + "different account into Claude Code, the ChatGPT app or the Codex CLI — and close "
+                + "the browser profile you signed in with — and every saved account here keeps "
+                + "reporting. Credentials come from those tools' own sign-ins on this Mac, "
+                + "which may differ from the account you are signed in to in a browser. "
                 + "This app never signs you in and never writes ~/.codex/auth.json.",
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480))
     }

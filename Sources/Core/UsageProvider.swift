@@ -5,7 +5,7 @@ import Foundation
 /// These are the choices the Add Account flow offers, in the order it offers
 /// them: the first is what almost everyone should use.
 struct CredentialMethod {
-    /// Short button/label text, e.g. "Use the account Claude Code is signed in to".
+    /// Short button/label text.
     var title: String
     /// One sentence explaining what will happen.
     var detail: String
@@ -16,14 +16,51 @@ struct CredentialMethod {
     /// True for the everyday path; the rest are advanced fallbacks.
     var isPrimary: Bool
 
+    /// Heading above the account this method currently resolves to, e.g.
+    /// "Current Claude Code account". Naming the *tool* is the whole point:
+    /// several of these credentials belong to a sign-in that is easy to confuse
+    /// with a different one.
+    var preflightHeading: String?
+    /// What this credential actually is, stated so nobody assumes it is their
+    /// browser or desktop-app session.
+    var disclaimer: String?
+    /// What to do when the resolved account is not the wanted one.
+    var switchInstruction: String?
+
     init(title: String, detail: String, source: CredentialSource,
-         requiresFileChoice: Bool = false, isPrimary: Bool = false) {
+         requiresFileChoice: Bool = false, isPrimary: Bool = false,
+         preflightHeading: String? = nil, disclaimer: String? = nil,
+         switchInstruction: String? = nil) {
         self.title = title
         self.detail = detail
         self.source = source
         self.requiresFileChoice = requiresFileChoice
         self.isPrimary = isPrimary
+        self.preflightHeading = preflightHeading
+        self.disclaimer = disclaimer
+        self.switchInstruction = switchInstruction
     }
+
+    /// Where this credential is read from, in words, for the preflight screen.
+    var sourceSummary: String {
+        switch source {
+        case .codexDefault:
+            return "Codex default · " + (CodexCredentialStore.defaultPath as NSString)
+                .abbreviatingWithTildeInPath
+        case .claudeCodeKeychain:
+            return "Keychain · " + ClaudeCredentialStore.keychainService
+        case .appKeychain:
+            return "Keychain · this app"
+        case .file(let path):
+            return path.isEmpty ? "A file you choose"
+                : (path as NSString).abbreviatingWithTildeInPath
+        }
+    }
+
+    /// Methods that can resolve an account before the user commits to them —
+    /// which is every method that reads a fixed location rather than asking for
+    /// a file first.
+    var supportsPreflight: Bool { !requiresFileChoice }
 }
 
 /// The contract every provider adapter implements.

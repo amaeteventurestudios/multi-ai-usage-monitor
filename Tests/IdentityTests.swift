@@ -267,6 +267,88 @@ func runIdentityTests() {
         }
     }
 
+    suite("Onboarding copy names the tool, not the brand") {
+
+        test("every provider offers a primary method that resolves an account first") {
+            for provider in ProviderKind.allCases {
+                let methods = ProviderRegistry.provider(for: provider).credentialMethods()
+                let primary = methods.first { $0.isPrimary }
+                expectNotNil(primary, "\(provider.displayName) has an everyday path")
+                expect(primary?.supportsPreflight == true,
+                       "\(provider.displayName)'s primary method can be checked before committing")
+                expectNotNil(primary?.preflightHeading,
+                             "\(provider.displayName) says whose account it is showing")
+                expectNotNil(primary?.switchInstruction,
+                             "\(provider.displayName) says what to do if it is the wrong one")
+                expectNotNil(primary?.disclaimer,
+                             "\(provider.displayName) says what the credential actually is")
+            }
+        }
+
+        test("Claude's heading and instruction name Claude Code exactly") {
+            let primary = ProviderRegistry.claude.credentialMethods().first { $0.isPrimary }!
+            expectEqual(primary.title, "Import the current Claude Code account")
+            expectEqual(primary.preflightHeading, "Current Claude Code account")
+            expect(primary.switchInstruction?.contains("Switch Claude Code") == true,
+                   "got \(primary.switchInstruction ?? "nil")")
+            expect(primary.switchInstruction?.contains("Check Again") == true)
+        }
+
+        test("Claude's disclaimer warns that the browser and desktop logins may differ") {
+            let disclaimer = ProviderRegistry.claude.credentialMethods()
+                .first { $0.isPrimary }!.disclaimer!
+            expect(disclaimer.contains("Claude Code's terminal/CLI credential"))
+            expect(disclaimer.contains("browser"))
+            expect(disclaimer.contains("desktop-app"))
+        }
+
+        test("OpenAI's copy names Codex/OpenAI tooling, not the ChatGPT brand") {
+            let primary = ProviderRegistry.openAI.credentialMethods().first { $0.isPrimary }!
+            expectEqual(primary.title, "Import the current Codex/OpenAI account")
+            expectEqual(primary.preflightHeading, "Current ChatGPT app / Codex CLI account")
+            expect(primary.disclaimer?.contains("Codex/OpenAI tooling on this Mac") == true)
+            expect(primary.disclaimer?.contains("ChatGPT browser session") == true,
+                   "and warns a browser session may be a different account")
+            expect(primary.switchInstruction?.contains("Check Again") == true)
+        }
+
+        test("each method says where it reads from") {
+            expect(ProviderRegistry.openAI.credentialMethods().first { $0.isPrimary }!
+                .sourceSummary.contains("~/.codex/auth.json"))
+            expect(ProviderRegistry.claude.credentialMethods().first { $0.isPrimary }!
+                .sourceSummary.contains("Claude Code"))
+        }
+
+        test("no method copy implies we read the plain Claude or ChatGPT session") {
+            // The credential is a specific tool's sign-in. Softening "Claude Code"
+            // to "Claude" would point at claude.ai in a browser, which is a
+            // different login and could be a different account entirely.
+            for provider in ProviderKind.allCases {
+                for method in ProviderRegistry.provider(for: provider).credentialMethods() {
+                    let copy = [method.title, method.detail, method.preflightHeading,
+                                method.switchInstruction].compactMap { $0 }.joined(separator: " ")
+                    expect(!copy.contains("Claude is signed in"),
+                           "\(provider.displayName): “Claude is signed in” means Claude Code here")
+                    expect(!copy.contains("ChatGPT is signed in"),
+                           "\(provider.displayName): name the app or the CLI, not the brand")
+                    expect(!copy.contains("Sign in to Claude "),
+                           "\(provider.displayName): sign-in happens in a named tool")
+                }
+            }
+        }
+
+        test("a file-based method is an advanced fallback, not a preflight one") {
+            for provider in ProviderKind.allCases {
+                let file = ProviderRegistry.provider(for: provider).credentialMethods()
+                    .first { $0.requiresFileChoice }
+                expectNotNil(file, "\(provider.displayName) keeps a file fallback")
+                expect(file?.isPrimary == false)
+                expect(file?.supportsPreflight == false,
+                       "nothing can be resolved until a file is chosen")
+            }
+        }
+    }
+
     suite("Keychain output decoding") {
 
         test("a hex-encoded multi-line value is decoded back to its text") {

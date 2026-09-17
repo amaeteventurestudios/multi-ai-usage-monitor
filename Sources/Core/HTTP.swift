@@ -123,7 +123,7 @@ enum HTTP {
                                     message: "Authentication failed (HTTP \(http.status)).",
                                     recovery: provider == .claude
                                         ? "Open Claude Code and sign in again, then Refresh."
-                                        : "Open ChatGPT or run `codex` to sign in again, then Refresh.")
+                                        : "Open the ChatGPT app or run `codex login` to sign in again, then Refresh.")
             case 429:
                 return AccountError(kind: .rateLimited, message: "Rate-limited by the provider.",
                                     retryAfter: http.retryAfter)

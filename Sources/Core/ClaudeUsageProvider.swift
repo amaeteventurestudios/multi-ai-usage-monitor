@@ -33,13 +33,21 @@ final class ClaudeUsageProvider: UsageProvider {
     func credentialMethods() -> [CredentialMethod] {
         [
             CredentialMethod(
-                title: "Use the account Claude Code is signed in to",
-                detail: "Sign in to the Claude account you want to add using Claude Code, "
-                      + "then continue. This app copies that credential into its own Keychain "
-                      + "entry, so you can switch Claude Code to a different account afterwards "
-                      + "and this one keeps working.",
+                title: "Import the current Claude Code account",
+                detail: "This app copies that credential into its own Keychain entry, so you "
+                      + "can switch Claude Code to a different account afterwards and this one "
+                      + "keeps working.",
                 source: .claudeCodeKeychain,
-                isPrimary: true),
+                isPrimary: true,
+                preflightHeading: "Current Claude Code account",
+                // Claude Code signs in separately from claude.ai in a browser and
+                // from the Claude desktop app. Someone looking at a different
+                // account in one of those would otherwise import a credential
+                // they did not expect, and only notice later.
+                disclaimer: "This reads Claude Code's terminal/CLI credential. Your Claude "
+                          + "browser or desktop-app login may be a different account.",
+                switchInstruction: "Switch Claude Code to the account you want to import, "
+                                 + "then click Check Again."),
             CredentialMethod(
                 title: "Read a credential file instead",
                 detail: "Point at a JSON file holding a Claude credential. The file is only "

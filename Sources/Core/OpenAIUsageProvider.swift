@@ -25,13 +25,17 @@ final class OpenAIUsageProvider: UsageProvider {
     func credentialMethods() -> [CredentialMethod] {
         [
             CredentialMethod(
-                title: "Use the account ChatGPT or Codex is signed in to",
-                detail: "Sign in to the OpenAI account you want to add with the ChatGPT app or "
-                      + "`codex login`, then continue. This app copies that credential into its "
-                      + "own Keychain entry, so signing a different account in afterwards does "
-                      + "not disturb this one.",
+                title: "Import the current Codex/OpenAI account",
+                detail: "This app copies that credential into its own Keychain entry, so "
+                      + "signing a different account in afterwards does not disturb this one.",
                 source: .codexDefault,
-                isPrimary: true),
+                isPrimary: true,
+                preflightHeading: "Current ChatGPT app / Codex CLI account",
+                disclaimer: "This reads the account stored by Codex/OpenAI tooling on this Mac "
+                          + "(~/.codex/auth.json, shared by the ChatGPT desktop app and the Codex "
+                          + "CLI). Your ChatGPT browser session may be a different account.",
+                switchInstruction: "Switch Codex/OpenAI to the account you want to import "
+                                 + "(ChatGPT app or `codex login`), then click Check Again."),
             CredentialMethod(
                 title: "Read a credential file instead",
                 detail: "Point at another auth.json — useful when you keep a second account's "
@@ -62,7 +66,7 @@ final class OpenAIUsageProvider: UsageProvider {
             completion(.failure(AccountError(
                 kind: .expiredCredential,
                 message: "That credential has expired.",
-                recovery: "Open ChatGPT or run `codex login` to refresh it, then try again.")))
+                recovery: "Open the ChatGPT app or run `codex login` to refresh it, then try again.")))
             return
         }
 
@@ -145,7 +149,7 @@ final class OpenAIUsageProvider: UsageProvider {
         guard !auth.isExpired else {
             completion(.failure(AccountError(kind: .expiredCredential,
                                              message: "Authentication expired.",
-                                             recovery: "Open ChatGPT or run `codex login` for this "
+                                             recovery: "Open the ChatGPT app or run `codex login` for this "
                                                      + "account, or use Reconnect.")))
             return
         }
