@@ -116,6 +116,8 @@ final class AppSettings {
         static let showCountdown = "display.showResetCountdown"
         static let onlyHighest = "display.onlyHighestInMenuBar"
         static let perAccountFormat = "display.perAccountFormat"
+        static let usageDisplay = "display.usageDisplay"
+        static let miniBarLength = "display.miniBarLength"
         static let backgroundOpacity = "display.backgroundOpacity"
         static let usageWarnings = "notifications.usageWarningsEnabled"
         static let warningThreshold = "notifications.warningThresholdPercent"
@@ -130,6 +132,8 @@ final class AppSettings {
             Key.refreshMinutes: 5,
             Key.summaryMode: MenuBarSummaryMode.perAccount.rawValue,
             Key.perAccountFormat: PerAccountFormat.detailed.rawValue,
+            Key.usageDisplay: UsageDisplayMode.dualBars.rawValue,
+            Key.miniBarLength: MiniBarLength.medium.rawValue,
             Key.showPercentages: true,
             Key.showCountdown: true,
             Key.onlyHighest: false,
@@ -167,6 +171,16 @@ final class AppSettings {
     var perAccountFormat: PerAccountFormat {
         get { PerAccountFormat(rawValue: d.string(forKey: Key.perAccountFormat) ?? "") ?? .detailed }
         set { d.set(newValue.rawValue, forKey: Key.perAccountFormat) }
+    }
+
+    var usageDisplay: UsageDisplayMode {
+        get { UsageDisplayMode(rawValue: d.string(forKey: Key.usageDisplay) ?? "") ?? .dualBars }
+        set { d.set(newValue.rawValue, forKey: Key.usageDisplay) }
+    }
+
+    var miniBarLength: MiniBarLength {
+        get { MiniBarLength(rawValue: d.string(forKey: Key.miniBarLength) ?? "") ?? .medium }
+        set { d.set(newValue.rawValue, forKey: Key.miniBarLength) }
     }
 
     var showPercentages: Bool {
@@ -226,7 +240,7 @@ final class AppSettings {
     func resetToDefaults() {
         for key in [Key.refreshMinutes, Key.summaryMode, Key.showPercentages,
                     Key.showCountdown, Key.onlyHighest, Key.backgroundOpacity,
-                    Key.perAccountFormat,
+                    Key.perAccountFormat, Key.usageDisplay, Key.miniBarLength,
                     Key.usageWarnings, Key.warningThreshold,
                     Key.authWarnings, Key.debugLogging, Key.includeIdentities] {
             d.removeObject(forKey: key)
