@@ -15,6 +15,9 @@ final class AccountEditorController: NSObject {
     private let coordinator: UsageCoordinator
 
     private var sheet: NSWindow!
+    /// Exposed so the settings window can keep the sheet's background in step
+    /// with the rest of the app.
+    var sheetWindow: NSWindow? { sheet }
     private var nameField: NSTextField!
     private var enabledBox: NSButton!
     private var sourcePopup: NSPopUpButton!

@@ -25,6 +25,22 @@ enum MenuBarSummaryMode: String, CaseIterable, Codable {
 final class AppSettings {
     static let currentSchemaVersion = 1
 
+    /// How solid the app's own windows are drawn, as a fraction.
+    ///
+    /// 1.0 is a completely solid window; lower values let the desktop show
+    /// through. The floor is deliberately well above zero: below roughly 0.6 the
+    /// text in a settings pane starts competing with whatever is behind it, and
+    /// a preference that can make the app unreadable is not a preference worth
+    /// offering.
+    static let minimumBackgroundOpacity = 0.60
+    static let maximumBackgroundOpacity = 1.00
+    static let defaultBackgroundOpacity = 0.90
+
+    static func clampBackgroundOpacity(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultBackgroundOpacity }
+        return min(maximumBackgroundOpacity, max(minimumBackgroundOpacity, value))
+    }
+
     private let d: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.d = defaults
@@ -39,6 +55,7 @@ final class AppSettings {
         static let showBadges = "display.showProviderBadges"
         static let showCountdown = "display.showResetCountdown"
         static let onlyHighest = "display.onlyHighestInMenuBar"
+        static let backgroundOpacity = "display.backgroundOpacity"
         static let usageWarnings = "notifications.usageWarningsEnabled"
         static let warningThreshold = "notifications.warningThresholdPercent"
         static let authWarnings = "notifications.authWarningsEnabled"
@@ -55,6 +72,7 @@ final class AppSettings {
             Key.showBadges: true,
             Key.showCountdown: true,
             Key.onlyHighest: false,
+            Key.backgroundOpacity: AppSettings.defaultBackgroundOpacity,
             Key.usageWarnings: true,
             Key.warningThreshold: 90,
             Key.authWarnings: true,
@@ -101,6 +119,14 @@ final class AppSettings {
         set { d.set(newValue, forKey: Key.onlyHighest) }
     }
 
+    /// Clamped on the way in *and* on the way out, so neither a mistyped
+    /// defaults write nor a value from a future version with a wider range can
+    /// render the app unreadable.
+    var backgroundOpacity: Double {
+        get { AppSettings.clampBackgroundOpacity(d.double(forKey: Key.backgroundOpacity)) }
+        set { d.set(AppSettings.clampBackgroundOpacity(newValue), forKey: Key.backgroundOpacity) }
+    }
+
     var usageWarningsEnabled: Bool {
         get { d.bool(forKey: Key.usageWarnings) }
         set { d.set(newValue, forKey: Key.usageWarnings) }
@@ -136,7 +162,8 @@ final class AppSettings {
     /// cleared by their own stores; this only touches preferences.
     func resetToDefaults() {
         for key in [Key.refreshMinutes, Key.summaryMode, Key.showPercentages, Key.showBadges,
-                    Key.showCountdown, Key.onlyHighest, Key.usageWarnings, Key.warningThreshold,
+                    Key.showCountdown, Key.onlyHighest, Key.backgroundOpacity,
+                    Key.usageWarnings, Key.warningThreshold,
                     Key.authWarnings, Key.debugLogging, Key.includeIdentities] {
             d.removeObject(forKey: key)
         }

@@ -30,6 +30,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var tabView: NSTabView!
     private var accountsStack: NSStackView!
     private var lastRefreshLabel: NSTextField!
+    private var opacitySlider: NSSlider!
+    private var opacityValueLabel: NSTextField!
     private var editor: AccountEditorController?
 
     init(coordinator: UsageCoordinator) {
@@ -43,12 +45,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         w.delegate = self
         w.contentView = buildBody()
         w.center()
+        WindowBackground.apply(opacity: coordinator.settings.backgroundOpacity, to: w)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
 
     func show(tab: Tab = .accounts) {
         reloadAccounts()
         refreshLastRefreshLabel()
+        applyBackgroundOpacity()
         tabView.selectTabViewItem(at: tab.rawValue)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
@@ -101,6 +105,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func buildBody() -> NSView {
         tabView = NSTabView()
         tabView.translatesAutoresizingMaskIntoConstraints = false
+        WindowBackground.makeTransparent(tabView)
         for tab in Tab.allCases {
             let item = NSTabViewItem(identifier: tab.rawValue)
             item.label = tab.title
@@ -329,6 +334,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
         self.editor = editor
         editor.beginSheet(on: window)
+        WindowBackground.apply(opacity: settings.backgroundOpacity, to: editor.sheetWindow)
     }
 
     @objc private func toggleAccount(_ sender: NSButton) {
@@ -396,6 +402,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return b
         }
 
+        opacitySlider = NSSlider(value: settings.backgroundOpacity,
+                                 minValue: AppSettings.minimumBackgroundOpacity,
+                                 maxValue: AppSettings.maximumBackgroundOpacity,
+                                 target: self,
+                                 action: #selector(backgroundOpacityChanged(_:)))
+        // Continuous so the window follows the thumb — the whole point of the
+        // control is seeing the result while you choose it.
+        opacitySlider.isContinuous = true
+        opacitySlider.translatesAutoresizingMaskIntoConstraints = false
+        opacitySlider.widthAnchor.constraint(equalToConstant: 240).isActive = true
+
+        opacityValueLabel = label(Fmt.percentage(settings.backgroundOpacity), size: 12)
+        opacityValueLabel.alignment = .right
+        opacityValueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        opacityValueLabel.translatesAutoresizingMaskIntoConstraints = false
+        opacityValueLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
+
         return vstack([
             label("Menu Bar Summary", size: 13, bold: true),
             popup,
@@ -411,7 +434,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
                   settings.onlyHighestInMenuBar, #selector(toggleOnlyHighest(_:))),
             label("Every percentage in this app is usage *used*, never remaining.",
                   size: 11, color: .secondaryLabelColor, wrapWidth: 480),
+
+            label("Background Opacity", size: 13, bold: true),
+            hstack([opacitySlider, opacityValueLabel]),
+            label("Adjust how solid or transparent the app background appears. "
+                + "Higher is more solid; lower lets the desktop show through.",
+                  size: 11, color: .secondaryLabelColor, wrapWidth: 480),
         ])
+    }
+
+    /// Push the current setting to every window this app owns.
+    private func applyBackgroundOpacity() {
+        let opacity = settings.backgroundOpacity
+        WindowBackground.apply(opacity: opacity, to: window)
+        WindowBackground.apply(opacity: opacity, to: editor?.sheetWindow)
+    }
+
+    @objc private func backgroundOpacityChanged(_ sender: NSSlider) {
+        settings.backgroundOpacity = sender.doubleValue
+        opacityValueLabel.stringValue = Fmt.percentage(settings.backgroundOpacity)
+        // Immediate, with no restart and no reopening the window.
+        applyBackgroundOpacity()
     }
 
     @objc private func summaryModeChanged(_ sender: NSPopUpButton) {

@@ -51,6 +51,12 @@ func runPresentationTests() {
                         "Reset time unknown")
         }
 
+        test("a fraction reads as a whole percentage") {
+            expectEqual(Fmt.percentage(0.9), "90%")
+            expectEqual(Fmt.percentage(1.0), "100%")
+            expectEqual(Fmt.percentage(0.605), "61%", "rounded, no false precision")
+        }
+
         test("money formats from minor units") {
             expect(Fmt.money(429, currency: "USD", exponent: 2).contains("4.29"))
         }

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Background opacity control** in Settings → Display. A slider from 60% to
+  100% (default 90%) sets how solid the app's own windows are drawn. It applies
+  to the settings window and the account editor sheet immediately, with no
+  restart, and persists between launches. The tint is the dynamic system window
+  colour, so Dark Mode keeps its contrast instead of washing out. The floor is
+  deliberately above zero — a preference that can make the app unreadable is not
+  worth offering.
+
+### Changed
+
+- The copyright holder for this project's own contributions is now
+  **Amaete Umanah** rather than Amaete Venture Studios, in LICENSE, NOTICE, the
+  per-file modification headers and the About pane. Upstream attribution to
+  Georgios Stavropoulos and stavrop/ai-usage-monitor is unchanged.
+
 ## [0.1.0] — Phase One
 
 First release of **Multi AI Usage Monitor**, a fork of

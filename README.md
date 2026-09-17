@@ -103,6 +103,8 @@ Quit                                              ⌘Q
   per metric and per usage window, re-arming automatically after each reset.
 - **Three menu bar summary modes** — compact (`C1 12% · C2 43% · G 88%`),
   per provider (`Claude 43% · OpenAI 88%`), or minimal (`AI`).
+- **Background opacity control** — a slider from 60% to 100% for how solid the
+  app's windows are drawn, applied immediately and remembered between launches.
 - **No telemetry, no analytics, no backend, no account.**
 
 ## Supported providers

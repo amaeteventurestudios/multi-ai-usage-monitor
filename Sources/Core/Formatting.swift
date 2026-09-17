@@ -92,6 +92,12 @@ enum Fmt {
         return "\(seconds / 86_400)-day"
     }
 
+    /// A fraction as a whole percentage, e.g. 0.9 → "90%". Used for settings
+    /// that are stored as a fraction but read better as a percentage.
+    static func percentage(_ fraction: Double) -> String {
+        "\(Int((fraction * 100).rounded()))%"
+    }
+
     /// Money from minor units, e.g. (429, "USD", 2) → "$4.29".
     static func money(_ minor: Int, currency: String, exponent: Int) -> String {
         let value = Double(minor) / pow(10.0, Double(exponent))

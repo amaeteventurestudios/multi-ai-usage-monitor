@@ -151,6 +151,7 @@ func runAccountTests() {
 
         test("defaults are the documented ones") {
             let s = AppSettings(defaults: scratchDefaults())
+            expectEqual(s.backgroundOpacity, 0.90)
             expectEqual(s.refreshIntervalMinutes, 5)
             expectEqual(s.menuBarSummaryMode, .compact)
             expectEqual(s.warningThresholdPercent, 90)
@@ -198,13 +199,39 @@ func runAccountTests() {
             expectEqual(s.warningThresholdPercent, 1)
         }
 
+        test("background opacity persists across a restart") {
+            let defaults = scratchDefaults()
+            let first = AppSettings(defaults: defaults)
+            first.backgroundOpacity = 0.75
+            expectEqual(AppSettings(defaults: defaults).backgroundOpacity, 0.75)
+        }
+
+        test("background opacity is clamped so the app can never be made unreadable") {
+            let s = AppSettings(defaults: scratchDefaults())
+            s.backgroundOpacity = 0.0
+            expectEqual(s.backgroundOpacity, 0.60, "the floor holds")
+            s.backgroundOpacity = 5.0
+            expectEqual(s.backgroundOpacity, 1.00, "and so does the ceiling")
+            expectEqual(AppSettings.clampBackgroundOpacity(.nan), 0.90,
+                        "a nonsense value falls back to the default")
+            expectEqual(AppSettings.clampBackgroundOpacity(0.9), 0.9)
+        }
+
+        test("a value written straight into defaults out of range is still clamped on read") {
+            let defaults = scratchDefaults()
+            defaults.set(0.1, forKey: "display.backgroundOpacity")
+            expectEqual(AppSettings(defaults: defaults).backgroundOpacity, 0.60)
+        }
+
         test("resetting local settings restores defaults") {
             let s = AppSettings(defaults: scratchDefaults())
             s.warningThresholdPercent = 42
             s.menuBarSummaryMode = .minimal
+            s.backgroundOpacity = 0.65
             s.resetToDefaults()
             expectEqual(s.warningThresholdPercent, 90)
             expectEqual(s.menuBarSummaryMode, .compact)
+            expectEqual(s.backgroundOpacity, 0.90)
         }
     }
 

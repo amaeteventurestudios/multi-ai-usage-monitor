@@ -85,6 +85,12 @@ Intel x86_64**.
 - [ ] Disabling an account removes it from the dropdown and the menu bar
 - [ ] Move Up / Move Down reorders the dropdown and the menu bar
 - [ ] Each menu bar summary mode renders as described
+- [ ] The Display tab's background opacity slider changes the settings window
+      immediately as it is dragged, and the percentage beside it tracks the thumb
+- [ ] At 100% the window is fully solid; at 60% the desktop shows through and the
+      text is still comfortably readable, in both Light and Dark Mode
+- [ ] An account editor sheet opened afterwards uses the same opacity
+- [ ] The chosen opacity is still in effect after quitting and relaunching
 - [ ] Removing an account asks for confirmation first
 - [ ] Settings survive quitting and relaunching the app
 - [ ] Accounts, their order and their reset rules survive a relaunch
