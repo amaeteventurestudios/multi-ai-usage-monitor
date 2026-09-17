@@ -109,9 +109,14 @@ Quit                                              ⌘Q
   of a number, never the number.
 - **Local notifications** at a configurable threshold, deduplicated per account,
   per metric and per usage window, re-arming automatically after each reset.
+- **Both usage windows, at a glance.** Every account can show its **5-hour** and
+  **Weekly** usage as two mini bars, each coloured independently — so
+  `5h` quiet beside `W` exhausted reads as exactly that. Both providers use the
+  same two names, so a glance compares like with like.
 - **A menu bar you can actually read.** Choose what the title is about — every
-  account, one figure per provider, or just `AI` — and, for per-account, how
-  wide each label is:
+  account, one figure per provider, or just `AI` — how each account's usage is
+  drawn (Dual Bars, Single Summary Bar, Text Only), how long the bars are
+  (Short/Medium/Long), and how wide each label is:
 
   | Format | Looks like |
   |---|---|
@@ -132,8 +137,13 @@ Quit                                              ⌘Q
 
 | Provider | Metrics | Source |
 |---|---|---|
-| Claude (Anthropic) | Session (5-hour), Weekly (all), Weekly (model-scoped), extra-usage credits | Claude Code's OAuth credential, plus the Anthropic OAuth usage endpoint |
-| OpenAI | Codex rolling window, Codex weekly window, Codex code review, any additional window the API reports | The Codex/ChatGPT credential at `~/.codex/auth.json`, plus the Codex usage endpoint |
+| Claude (Anthropic) | 5-hour, Weekly, Weekly (model-scoped), extra-usage credits | Claude Code's OAuth credential, plus the Anthropic OAuth usage endpoint |
+| OpenAI | 5-hour, Weekly, code review, any additional window the API reports — all governing Codex requests | The Codex/ChatGPT credential at `~/.codex/auth.json`, plus the Codex usage endpoint |
+
+Both providers use the same names for the same windows, and a window is
+classified by the length the provider reports rather than by assumption. A
+window the provider does not currently report simply does not appear — the app
+never invents one.
 
 ChatGPT's own message allowance is **not** currently readable — see
 [Known limitations](docs/KNOWN_LIMITATIONS.md).

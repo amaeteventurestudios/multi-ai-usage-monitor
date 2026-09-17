@@ -2,18 +2,35 @@ import Foundation
 
 func runMenuFormatTests() {
 
+    /// One account with a single known window, which is all these label and
+    /// ordering tests need. Dual-window behaviour is covered in DualBarTests.
     func entry(_ badge: String, _ provider: String, _ short: String,
-               _ pct: Double?, error: Bool = false) -> MenuBarSummary.Entry {
-        MenuBarSummary.Entry(badge: badge, providerName: provider, shortName: short,
-                             usedPercent: pct, hasError: error)
+               _ pct: Double?, error: Bool = false) -> MenuBarLayout.Source {
+        MenuBarLayout.Source(
+            badge: badge, providerName: provider, shortName: short,
+            fiveHour: MenuBarWindowRow(role: .fiveHour, percent: pct,
+                                       hasError: error, isStale: false),
+            weekly: nil, hasAccountError: error)
+    }
+
+    /// The single-summary text path renders "label percent", which is what the
+    /// label and ordering rules are about.
+    func title(_ sources: [MenuBarLayout.Source],
+               mode: MenuBarSummaryMode = .perAccount,
+               format: PerAccountFormat = .detailed,
+               showPercentages: Bool = true,
+               onlyHighest: Bool = false) -> String? {
+        MenuBarLayout.textTitle(sources: sources, mode: mode, format: format,
+                                usageDisplay: .singleSummaryBar,
+                                showPercentages: showPercentages, onlyHighest: onlyHighest)
     }
 
     /// The topology this phase was built around.
     let four = [
         entry("C", "Claude", "Amaete", 57),
         entry("C", "Claude", "StarLogic", 22),
-        entry("G", "OpenAI", "Business", 90),
-        entry("G", "OpenAI", "Personal", 41),
+        entry("O", "OpenAI", "Business", 90),
+        entry("O", "OpenAI", "Personal", 41),
     ]
 
     suite("Short names") {
@@ -114,7 +131,7 @@ func runMenuFormatTests() {
 
         test("colliding names expand only as far as they must") {
             // The example from the brief: Business and Beta both want "B".
-            let out = ShortName.uniqueAbbreviations(["Business", "Beta"], groups: ["G", "G"])
+            let out = ShortName.uniqueAbbreviations(["Business", "Beta"], groups: ["O", "O"])
             expectEqual(out, ["Bu", "Be"])
         }
 
@@ -131,12 +148,12 @@ func runMenuFormatTests() {
 
         test("names in different groups may share an abbreviation") {
             // "C-B" and "G-B" are not ambiguous: the provider prefix separates them.
-            expectEqual(ShortName.uniqueAbbreviations(["Business", "Business"], groups: ["C", "G"]),
+            expectEqual(ShortName.uniqueAbbreviations(["Business", "Business"], groups: ["C", "O"]),
                         ["B", "B"])
         }
 
         test("genuinely identical names in one group are numbered rather than left ambiguous") {
-            let out = ShortName.uniqueAbbreviations(["Business", "Business"], groups: ["G", "G"])
+            let out = ShortName.uniqueAbbreviations(["Business", "Business"], groups: ["O", "O"])
             expectEqual(out.count, 2)
             expect(out[0] != out[1], "an ambiguous menu bar is worse than an ugly one, got \\(out)")
         }
@@ -156,17 +173,17 @@ func runMenuFormatTests() {
     suite("Menu bar formats") {
 
         test("detailed names the provider and the account in full") {
-            expectEqual(MenuBarSummary.title(entries: four, mode: .perAccount, format: .detailed),
-                        "C Amaete 57% · C StarLogic 22% · G Business 90% · G Personal 41%")
+            expectEqual(title(four, format: .detailed),
+                        "C Amaete 57% · C StarLogic 22% · O Business 90% · O Personal 41%")
         }
 
         test("compact abbreviates behind the provider initial") {
-            expectEqual(MenuBarSummary.title(entries: four, mode: .perAccount, format: .compact),
-                        "C-A 57% · C-S 22% · G-B 90% · G-P 41%")
+            expectEqual(title(four, format: .compact),
+                        "C-A 57% · C-S 22% · O-B 90% · O-P 41%")
         }
 
         test("minimal labels drop the provider entirely") {
-            expectEqual(MenuBarSummary.title(entries: four, mode: .perAccount, format: .minimalLabels),
+            expectEqual(title(four, format: .minimalLabels),
                         "A 57% · S 22% · B 90% · P 41%")
         }
 
@@ -174,8 +191,8 @@ func runMenuFormatTests() {
             // Business is the highest, but it stays third because that is where
             // the user put it.
             for format in PerAccountFormat.allCases {
-                let title = MenuBarSummary.title(entries: four, mode: .perAccount, format: format)!
-                let parts = title.components(separatedBy: " · ")
+                let rendered = title(four, format: format)!
+                let parts = rendered.components(separatedBy: " · ")
                 expectEqual(parts.count, 4)
                 expect(parts[0].hasSuffix("57%"), "\\(format.rawValue): first is Amaete")
                 expect(parts[3].hasSuffix("41%"), "\\(format.rawValue): last is Personal")
@@ -186,72 +203,68 @@ func runMenuFormatTests() {
             let failing = [four[0],
                            entry("C", "Claude", "StarLogic", nil, error: true),
                            four[2], four[3]]
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .perAccount, format: .detailed),
-                        "C Amaete 57% · C StarLogic ! · G Business 90% · G Personal 41%")
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .perAccount, format: .compact),
-                        "C-A 57% · C-S ! · G-B 90% · G-P 41%")
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .perAccount, format: .minimalLabels),
+            expectEqual(title(failing, format: .detailed),
+                        "C Amaete 57% · C StarLogic ! · O Business 90% · O Personal 41%")
+            expectEqual(title(failing, format: .compact),
+                        "C-A 57% · C-S ! · O-B 90% · O-P 41%")
+            expectEqual(title(failing, format: .minimalLabels),
                         "A 57% · S ! · B 90% · P 41%")
         }
 
-        test("an account that failed while holding numbers is still flagged") {
+        test("an account that failed while holding numbers keeps them and is flagged") {
+            // Losing the number would cost the user the very thing they glance
+            // at. Losing the flag would let a stale number pass as current.
             let failing = [entry("C", "Claude", "Amaete", 57, error: true)]
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .perAccount, format: .detailed),
-                        "C Amaete !", "the dropdown carries the retained numbers and the reason")
+            expectEqual(title(failing, format: .detailed), "C Amaete 57% !")
         }
 
         test("colliding aliases are disambiguated inside the menu bar itself") {
-            let colliding = [entry("G", "OpenAI", "Business", 90),
-                             entry("G", "OpenAI", "Beta", 12)]
-            expectEqual(MenuBarSummary.title(entries: colliding, mode: .perAccount, format: .compact),
-                        "G-Bu 90% · G-Be 12%")
-            expectEqual(MenuBarSummary.title(entries: colliding, mode: .perAccount,
-                                             format: .minimalLabels),
+            let colliding = [entry("O", "OpenAI", "Business", 90),
+                             entry("O", "OpenAI", "Beta", 12)]
+            expectEqual(title(colliding, format: .compact),
+                        "O-Bu 90% · O-Be 12%")
+            expectEqual(title(colliding, format: .minimalLabels),
                         "Bu 90% · Be 12%")
         }
 
         test("percentages can be switched off without losing the accounts") {
-            expectEqual(MenuBarSummary.title(entries: four, mode: .perAccount, format: .compact,
-                                             showPercentages: false),
-                        "C-A · C-S · G-B · G-P")
+            expectEqual(title(four, format: .compact, showPercentages: false),
+                        "C-A · C-S · O-B · O-P")
         }
 
         test("only-highest keeps the worst account and never hides a failure") {
-            expectEqual(MenuBarSummary.title(entries: four, mode: .perAccount, format: .detailed,
-                                             onlyHighest: true),
-                        "G Business 90%")
+            expectEqual(title(four, format: .detailed, onlyHighest: true),
+                        "O Business 90%")
             let failing = [four[0], entry("C", "Claude", "StarLogic", nil, error: true), four[2]]
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .perAccount, format: .detailed,
-                                             onlyHighest: true),
-                        "C StarLogic ! · G Business 90%")
+            expectEqual(title(failing, format: .detailed, onlyHighest: true),
+                        "C StarLogic ! · O Business 90%")
         }
     }
 
     suite("Summary modes stay distinct from formats") {
 
         test("provider mode reports the highest usage per provider") {
-            expectEqual(MenuBarSummary.title(entries: four, mode: .provider),
+            expectEqual(title(four, mode: .provider),
                         "Claude 57% · OpenAI 90%")
         }
 
         test("provider mode flags a provider with a failing account") {
             let failing = [four[0], entry("C", "Claude", "StarLogic", nil, error: true), four[2]]
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .provider),
-                        "Claude ! · OpenAI 90%")
+            expectEqual(title(failing, mode: .provider), "Claude 57% ! · OpenAI 90%",
+                        "the provider's worst known figure survives, flagged")
         }
 
         test("icon-only mode is unaffected by the per-account format") {
             for format in PerAccountFormat.allCases {
-                expectEqual(MenuBarSummary.title(entries: four, mode: .iconOnly, format: format), "AI")
+                expectEqual(title(four, mode: .iconOnly, format: format), "AI")
             }
             let failing = [entry("C", "Claude", "Amaete", nil, error: true)]
-            expectEqual(MenuBarSummary.title(entries: failing, mode: .iconOnly), "AI !")
+            expectEqual(title(failing, mode: .iconOnly), "AI !")
         }
 
         test("nothing known yet means no title, so the placeholder stands") {
-            expectNil(MenuBarSummary.title(entries: [], mode: .perAccount))
-            expectNil(MenuBarSummary.title(entries: [entry("C", "Claude", "Amaete", nil)],
-                                           mode: .perAccount))
+            expectNil(title([]))
+            expectNil(title([entry("C", "Claude", "Amaete", nil)]))
         }
 
         test("the two “minimal” ideas are no longer both called minimal") {
@@ -278,12 +291,12 @@ func runMenuFormatTests() {
             var states: [UUID: AccountRuntimeState] = [:]
             for (id, pct) in [(a.id, 57.0), (b.id, 22.0)] {
                 states[id] = AccountRuntimeState(usage: AccountUsage(accountID: id, metrics: [
-                    UsageMetric(id: "m", name: "Weekly", usedPercent: pct)]))
+                    UsageMetric(id: "m", name: "Weekly", usedPercent: pct, role: .weekly)]))
             }
-            let entries = MenuBarSummary.entries(accounts: store.accounts, states: states)
+            let entries = MenuBarLayout.sources(accounts: store.accounts, states: states)
             expectEqual(entries.count, 2, "a disabled account is absent")
             expectEqual(entries.map { $0.shortName }, ["Amaete", "StarLogic"])
-            expectEqual(MenuBarSummary.title(entries: entries, mode: .perAccount, format: .detailed),
+            expectEqual(title(entries, format: .detailed),
                         "C Amaete 57% · C StarLogic 22%")
         }
     }
@@ -403,15 +416,14 @@ func runMenuFormatTests() {
             var states: [UUID: AccountRuntimeState] = [:]
             for (id, pct) in zip(ids, [57.0, 22.0, 90.0, 41.0]) {
                 states[id] = AccountRuntimeState(usage: AccountUsage(accountID: id, metrics: [
-                    UsageMetric(id: "m", name: "Weekly", usedPercent: pct)]))
+                    UsageMetric(id: "m", name: "Weekly", usedPercent: pct, role: .weekly)]))
             }
-            let entries = MenuBarSummary.entries(accounts: store.accounts, states: states)
-            expectEqual(MenuBarSummary.title(entries: entries, mode: .perAccount, format: .detailed),
-                        "C Amaete 57% · C StarLogic 22% · G Business 90% · G Personal 41%")
-            expectEqual(MenuBarSummary.title(entries: entries, mode: .perAccount, format: .compact),
-                        "C-A 57% · C-S 22% · G-B 90% · G-P 41%")
-            expectEqual(MenuBarSummary.title(entries: entries, mode: .perAccount,
-                                             format: .minimalLabels),
+            let entries = MenuBarLayout.sources(accounts: store.accounts, states: states)
+            expectEqual(title(entries, format: .detailed),
+                        "C Amaete 57% · C StarLogic 22% · O Business 90% · O Personal 41%")
+            expectEqual(title(entries, format: .compact),
+                        "C-A 57% · C-S 22% · O-B 90% · O-P 41%")
+            expectEqual(title(entries, format: .minimalLabels),
                         "A 57% · S 22% · B 90% · P 41%")
         }
     }

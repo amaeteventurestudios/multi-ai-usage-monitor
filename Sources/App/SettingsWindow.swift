@@ -36,6 +36,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var formatPopup: NSPopUpButton!
     private var formatExplanation: NSTextField!
     private var previewLabel: NSTextField!
+    private var previewImageView: NSImageView!
+    private var usagePopup: NSPopUpButton!
+    private var usageExplanation: NSTextField!
+    private var barLengthControl: NSSegmentedControl!
     private var editor: AccountEditorController?
     private var onboarding: AccountOnboardingController?
 
@@ -421,6 +425,28 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         formatExplanation = label(settings.perAccountFormat.explanation,
                                   size: 11, color: .secondaryLabelColor, wrapWidth: 480)
 
+        usagePopup = NSPopUpButton()
+        for m in UsageDisplayMode.allCases { usagePopup.addItem(withTitle: m.displayName) }
+        usagePopup.selectItem(at: UsageDisplayMode.allCases.firstIndex(of: settings.usageDisplay) ?? 0)
+        usagePopup.target = self
+        usagePopup.action = #selector(usageDisplayChanged(_:))
+
+        usageExplanation = label(settings.usageDisplay.explanation,
+                                 size: 11, color: .secondaryLabelColor, wrapWidth: 480)
+
+        barLengthControl = NSSegmentedControl(labels: MiniBarLength.allCases.map { $0.displayName },
+                                              trackingMode: .selectOne,
+                                              target: self,
+                                              action: #selector(barLengthChanged(_:)))
+        barLengthControl.selectedSegment = MiniBarLength.allCases.firstIndex(of: settings.miniBarLength) ?? 1
+
+        previewImageView = NSImageView()
+        previewImageView.imageScaling = .scaleNone
+        previewImageView.imageAlignment = .alignLeft
+        previewImageView.translatesAutoresizingMaskIntoConstraints = false
+        previewImageView.heightAnchor.constraint(
+            equalToConstant: NSStatusBar.system.thickness).isActive = true
+
         previewLabel = label("", size: 12)
         previewLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
         previewLabel.lineBreakMode = .byTruncatingTail
@@ -453,7 +479,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             formatPopup,
             formatExplanation,
 
-            label("Preview", size: 11, color: .secondaryLabelColor),
+            label("Usage display", size: 13, bold: true),
+            usagePopup,
+            usageExplanation,
+
+            label("Mini bar length", size: 13, bold: true),
+            barLengthControl,
+
+            label("Menu bar preview", size: 13, bold: true),
+            previewImageView,
             previewLabel,
 
             check("Show percentages", settings.showPercentages, #selector(toggleShowPercentages(_:))),
@@ -479,36 +513,37 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return body
     }
 
-    /// Show what the menu bar will actually say, using the real accounts where
-    /// there is data and a worked example otherwise, so the choice can be made
-    /// by looking rather than by imagining.
-    private func previewText() -> String {
-        var entries = MenuBarSummary.entries(accounts: store.accounts, states: coordinator.states)
-        if entries.isEmpty {
-            entries = [
-                .init(badge: "C", providerName: "Claude", shortName: "Amaete",
-                      usedPercent: 57, hasError: false),
-                .init(badge: "C", providerName: "Claude", shortName: "Starlogic",
-                      usedPercent: 22, hasError: false),
-                .init(badge: "G", providerName: "OpenAI", shortName: "Business",
-                      usedPercent: 90, hasError: false),
-                .init(badge: "G", providerName: "OpenAI", shortName: "Personal",
-                      usedPercent: 41, hasError: false),
-            ]
-        } else if entries.allSatisfy({ $0.usedPercent == nil && !$0.hasError }) {
-            // Configured, but nothing fetched yet: stand in example numbers so
-            // the shape of the label is still visible.
-            entries = entries.enumerated().map { index, e in
-                .init(badge: e.badge, providerName: e.providerName, shortName: e.shortName,
-                      usedPercent: Double(20 + index * 17), hasError: false)
-            }
+    /// Show what the menu bar will actually show.
+    ///
+    /// Built from the same layout model and the same renderer as the status
+    /// item, from the real accounts and their latest values — so the preview
+    /// cannot drift from reality, and nothing here invents a number. An account
+    /// with no data yet previews as "--%" with an empty bar.
+    private func updatePreview() {
+        let sources = coordinator.menuBarSources()
+        let usesBars = settings.menuBarSummaryMode != .iconOnly
+            && settings.usageDisplay != .textOnly
+
+        if sources.isEmpty {
+            previewImageView?.image = nil
+            previewLabel?.stringValue = "Add an account to see the menu bar preview."
+            previewLabel?.textColor = .secondaryLabelColor
+            return
         }
-        return MenuBarSummary.title(entries: entries,
-                                    mode: settings.menuBarSummaryMode,
-                                    format: settings.perAccountFormat,
-                                    showPercentages: settings.showPercentages,
-                                    onlyHighest: settings.onlyHighestInMenuBar)
-            ?? "AI"
+
+        let cells = coordinator.menuBarCells()
+        let text = coordinator.menuBarTitle()
+
+        if usesBars, let image = MenuBarRenderer.image(cells: cells,
+                                                       barLength: settings.miniBarLength,
+                                                       showPercentages: settings.showPercentages) {
+            previewImageView?.image = image
+            previewLabel?.stringValue = ""
+        } else {
+            previewImageView?.image = nil
+            previewLabel?.stringValue = text ?? "—"
+            previewLabel?.textColor = .labelColor
+        }
     }
 
     /// The format picker only means anything in per-account mode.
@@ -519,7 +554,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         formatExplanation?.stringValue = perAccount
             ? settings.perAccountFormat.explanation
             : "Only used when the summary above is set to Per Account."
-        previewLabel?.stringValue = previewText()
+
+        // Bars are irrelevant in Icon Only, and length is irrelevant without bars.
+        let showsUsage = settings.menuBarSummaryMode != .iconOnly
+        usagePopup?.isEnabled = showsUsage
+        usageExplanation?.stringValue = showsUsage
+            ? settings.usageDisplay.explanation
+            : "Only used when the summary above shows accounts or providers."
+        barLengthControl?.isEnabled = showsUsage && settings.usageDisplay != .textOnly
+
+        updatePreview()
     }
 
     @objc private func summaryModeChanged(_ sender: NSPopUpButton) {
@@ -535,6 +579,20 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func perAccountFormatChanged(_ sender: NSPopUpButton) {
         let idx = min(max(0, sender.indexOfSelectedItem), PerAccountFormat.allCases.count - 1)
         settings.perAccountFormat = PerAccountFormat.allCases[idx]
+        updateFormatControls()
+        onChange?()
+    }
+
+    @objc private func usageDisplayChanged(_ sender: NSPopUpButton) {
+        let idx = min(max(0, sender.indexOfSelectedItem), UsageDisplayMode.allCases.count - 1)
+        settings.usageDisplay = UsageDisplayMode.allCases[idx]
+        updateFormatControls()
+        onChange?()
+    }
+
+    @objc private func barLengthChanged(_ sender: NSSegmentedControl) {
+        let idx = min(max(0, sender.selectedSegment), MiniBarLength.allCases.count - 1)
+        settings.miniBarLength = MiniBarLength.allCases[idx]
         updateFormatControls()
         onChange?()
     }

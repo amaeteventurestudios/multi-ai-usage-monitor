@@ -16,11 +16,15 @@ enum ProviderKind: String, Codable, CaseIterable {
         }
     }
 
-    /// Single letter used to build a menu bar badge, e.g. "C1", "G2".
+    /// Single letter used to build a menu bar badge, e.g. "C Amaete", "O-B".
+    ///
+    /// "G" is deliberately not used for OpenAI: it is reserved for a future
+    /// Gemini adapter, and a badge that has to be relearned later is worse than
+    /// one chosen correctly now.
     var badgeLetter: String {
         switch self {
         case .claude: return "C"
-        case .openAI: return "G"
+        case .openAI: return "O"
         }
     }
 }
@@ -292,6 +296,10 @@ enum MetricState: String, Codable {
 }
 
 /// Severity band for a usage value, mapped to colour by the UI layer.
+///
+/// Each usage window carries its own band, so one account can show a calm
+/// five-hour bar beside an exhausted weekly one — which is exactly the thing
+/// worth seeing at a glance.
 enum UsageSeverity {
     case normal, warning, high, critical
 
@@ -302,6 +310,62 @@ enum UsageSeverity {
         case ..<80:  return .warning
         case ..<95:  return .high
         default:     return .critical
+        }
+    }
+
+    /// Spoken form, so colour is never the only signal.
+    var accessibilityWord: String {
+        switch self {
+        case .normal:   return "normal"
+        case .warning:  return "getting high"
+        case .high:     return "high"
+        case .critical: return "nearly exhausted"
+        }
+    }
+}
+
+/// Which usage window a metric measures.
+///
+/// Both providers expose a short rolling window and a weekly one, and the app
+/// names them the same way for both — "5-hour" and "Weekly" — so a glance
+/// compares like with like. The role is what lets the menu bar pick the right
+/// two metrics without matching on display names.
+enum UsageWindowRole: String, Codable {
+    case fiveHour
+    case weekly
+    case other
+
+    var shortTag: String {
+        switch self {
+        case .fiveHour: return "5h"
+        case .weekly:   return "W"
+        case .other:    return ""
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .fiveHour: return "5-hour"
+        case .weekly:   return "Weekly"
+        case .other:    return ""
+        }
+    }
+
+    var spokenName: String {
+        switch self {
+        case .fiveHour: return "five-hour usage"
+        case .weekly:   return "weekly usage"
+        case .other:    return "usage"
+        }
+    }
+
+    /// Classify a window by the length the provider reports, so the two roles
+    /// are derived from data rather than assumed per provider.
+    static func forWindowSeconds(_ seconds: Int) -> UsageWindowRole {
+        switch seconds {
+        case 3600...21_600:        return .fiveHour   // a few hours, rolling
+        case 500_000...700_000:    return .weekly
+        default:                   return .other
         }
     }
 }
@@ -325,6 +389,8 @@ struct UsageMetric: Codable, Equatable {
     var resetFromProvider: Bool
     /// Provider's own words for the window, e.g. "5-hour", "Weekly".
     var windowDescription: String?
+    /// Which of the two windows the menu bar draws this is, if either.
+    var role: UsageWindowRole
     /// A short, secret-free explanation shown under the row for non-available
     /// states (e.g. "Not detectable yet", "Reconnect required").
     var detail: String?
@@ -340,6 +406,7 @@ struct UsageMetric: Codable, Equatable {
          resetsAt: Date? = nil,
          resetFromProvider: Bool = false,
          windowDescription: String? = nil,
+         role: UsageWindowRole = .other,
          detail: String? = nil,
          lastUpdated: Date? = nil,
          state: MetricState = .available) {
@@ -351,6 +418,7 @@ struct UsageMetric: Codable, Equatable {
         self.resetsAt = resetsAt
         self.resetFromProvider = resetFromProvider
         self.windowDescription = windowDescription
+        self.role = role
         self.detail = detail
         self.lastUpdated = lastUpdated
         self.state = state
@@ -362,7 +430,7 @@ struct UsageMetric: Codable, Equatable {
     }
 
     var remainingPercent: Double? {
-        guard let used = usedPercent else { return nil }
+        guard let used = effectiveUsedPercent else { return nil }
         return max(0, 100 - used)
     }
 
@@ -409,6 +477,11 @@ struct AccountUsage: Codable, Equatable {
     var headlineMetric: UsageMetric? {
         metrics.filter { $0.isRenderableValue }
             .max { ($0.effectiveUsedPercent ?? 0) < ($1.effectiveUsedPercent ?? 0) }
+    }
+
+    /// The metric for one of the two windows the menu bar draws.
+    func metric(for role: UsageWindowRole) -> UsageMetric? {
+        metrics.first { $0.role == role }
     }
 }
 

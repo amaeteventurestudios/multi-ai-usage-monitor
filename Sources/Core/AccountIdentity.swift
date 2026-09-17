@@ -13,8 +13,13 @@ struct AccountIdentity: Codable, Equatable {
     /// A stable provider-side identifier. The strongest key we have for telling
     /// two accounts apart and for spotting a duplicate.
     var providerAccountID: String?
-    /// Organisation or workspace name, when reported.
+    /// Organisation or workspace name, when reported. Kept verbatim; see
+    /// `usefulOrganizationName` for whether it is worth showing.
     var organizationName: String?
+    /// The person's own name, when the provider reports one. Not displayed —
+    /// it exists so an organisation auto-named after the account holder can be
+    /// recognised as such.
+    var personName: String?
     /// The provider's own plan identifier, kept verbatim for diagnostics.
     var planRaw: String?
     /// A friendly plan name, but only where the mapping is certain.
@@ -27,6 +32,7 @@ struct AccountIdentity: Codable, Equatable {
     init(email: String? = nil,
          providerAccountID: String? = nil,
          organizationName: String? = nil,
+         personName: String? = nil,
          planRaw: String? = nil,
          planLabel: String? = nil,
          verified: Bool,
@@ -34,6 +40,7 @@ struct AccountIdentity: Codable, Equatable {
         self.email = email.flatMap { $0.isEmpty ? nil : $0 }
         self.providerAccountID = providerAccountID.flatMap { $0.isEmpty ? nil : $0 }
         self.organizationName = organizationName.flatMap { $0.isEmpty ? nil : $0 }
+        self.personName = personName.flatMap { $0.isEmpty ? nil : $0 }
         self.planRaw = planRaw.flatMap { $0.isEmpty ? nil : $0 }
         self.planLabel = planLabel.flatMap { $0.isEmpty ? nil : $0 }
         self.verified = verified
@@ -61,12 +68,41 @@ struct AccountIdentity: Codable, Equatable {
         return false
     }
 
+    /// The organisation, but only when naming it actually tells the user
+    /// something.
+    ///
+    /// Both providers auto-create a personal organisation for an individual
+    /// account and name it after the person — Anthropic returned the initials
+    /// "AU", OpenAI returns "Personal org for you@example.com". Printing those
+    /// beside an account adds a cryptic token and no information. A real shared
+    /// organisation is worth showing; an echo of the account holder is not.
+    var usefulOrganizationName: String? {
+        guard let raw = organizationName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+
+        // Too short to read as a name. "AU" tells you nothing you did not know.
+        guard raw.count > 3 else { return nil }
+        // An auto-generated personal organisation, under either provider's
+        // naming convention.
+        if raw.lowercased().hasPrefix("personal org") { return nil }
+        // Embeds an address — which is already the account's name.
+        if raw.contains("@") { return nil }
+        // Named after the account holder rather than after an organisation.
+        if let person = personName, raw.caseInsensitiveCompare(person) == .orderedSame { return nil }
+        if let email = email {
+            if raw.caseInsensitiveCompare(email) == .orderedSame { return nil }
+            let local = email.prefix { $0 != "@" }
+            if !local.isEmpty, raw.caseInsensitiveCompare(String(local)) == .orderedSame { return nil }
+        }
+        return raw
+    }
+
     /// Secondary metadata for the line under an account's name, e.g.
     /// "Plan: Pro · Acme Inc". Never the identity itself.
     var subtitle: String? {
         var parts: [String] = []
         if let plan = planLabel { parts.append("Plan: \(plan)") }
-        if let org = organizationName, org != email { parts.append(org) }
+        if let org = usefulOrganizationName { parts.append(org) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

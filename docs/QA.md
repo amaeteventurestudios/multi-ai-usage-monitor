@@ -125,14 +125,38 @@ Intel x86_64**.
       each with a description, and the live preview updates as you change it
 - [ ] The format picker is disabled unless the summary mode is Per Account
 
+## Dual usage bars
+
+- [ ] With Usage display set to **Dual Bars**, every account shows two bars,
+      `5h` above `W`
+- [ ] The two bars of one account can be different colours (e.g. a quiet 5-hour
+      window beside a nearly-exhausted weekly one)
+- [ ] Colours follow usage used: blue below 60%, amber to 79%, orange to 94%,
+      red at 95%+
+- [ ] **Single Summary Bar** shows one bar per account, equal to the higher of
+      the two windows — never their sum
+- [ ] **Text Only** shows both windows as `5h57% W31%` with no bars
+- [ ] Mini bar length Short / Medium / Long visibly changes bar width and
+      nothing else
+- [ ] Switching any of these updates the menu bar immediately, with no restart
+- [ ] All of them survive quitting and relaunching
+- [ ] The preview in Settings → Display matches what the menu bar shows, and uses
+      your real accounts and values
+- [ ] An account with no data yet previews as `--%` with an empty bar
+- [ ] A window the provider is not currently reporting is simply absent — not
+      shown as 0%
+- [ ] With VoiceOver on, the status item reads each account's windows and
+      severity in words
+
 ## Menu bar formats
 
 With four accounts (Claude Amaete, Claude StarLogic, OpenAI Business,
 OpenAI Personal):
 
-- [ ] Detailed reads `C Amaete 57% · C StarLogic 22% · G Business 90% · G Personal 41%`
-- [ ] Compact reads `C-A 57% · C-S 22% · G-B 90% · G-P 41%`
-- [ ] Minimal Labels reads `A 57% · S 22% · B 90% · P 41%`
+- [ ] Detailed labels read `C Amaete`, `C StarLogic`, `O Business`, `O Personal`
+- [ ] Compact labels read `C-A`, `C-S`, `O-B`, `O-P`
+- [ ] Minimal labels read `A`, `S`, `B`, `P`
+- [ ] OpenAI uses `O`, never `G`
 - [ ] Changing the format takes effect immediately, with no restart
 - [ ] The format survives quitting and relaunching
 - [ ] Account order in the menu bar matches the order in Settings, and does not
@@ -143,6 +167,14 @@ OpenAI Personal):
 - [ ] Two accounts with aliases sharing a first letter are disambiguated
       (e.g. `Business` and `Beta` become `G-Bu` and `G-Be`)
 - [ ] No e-mail address appears in the menu bar in any format
+
+## Dropdown
+
+- [ ] Each account shows a **5-hour** and a **Weekly** row — never "Session"
+- [ ] Each row shows the percentage used, the percentage left and a reset
+      countdown
+- [ ] A metric that failed while others succeeded shows its own error, and the
+      working metrics still show their numbers
 
 ## OpenAI Business and Personal
 

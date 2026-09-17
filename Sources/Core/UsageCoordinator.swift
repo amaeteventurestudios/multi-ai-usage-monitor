@@ -296,13 +296,27 @@ final class UsageCoordinator {
         states[account.id] ?? AccountRuntimeState()
     }
 
-    func menuBarTitle() -> String? {
-        MenuBarSummary.title(
-            entries: MenuBarSummary.entries(accounts: store.accounts, states: states),
-            mode: settings.menuBarSummaryMode,
-            format: settings.perAccountFormat,
-            showPercentages: settings.showPercentages,
-            onlyHighest: settings.onlyHighestInMenuBar)
+    /// Everything the menu bar needs, from the live accounts.
+    func menuBarSources(now: Date = Date()) -> [MenuBarLayout.Source] {
+        MenuBarLayout.sources(accounts: store.accounts, states: states, now: now)
+    }
+
+    func menuBarCells(now: Date = Date()) -> [MenuBarCell] {
+        MenuBarLayout.cells(sources: menuBarSources(now: now),
+                            mode: settings.menuBarSummaryMode,
+                            format: settings.perAccountFormat,
+                            usageDisplay: settings.usageDisplay,
+                            showPercentages: settings.showPercentages,
+                            onlyHighest: settings.onlyHighestInMenuBar)
+    }
+
+    func menuBarTitle(now: Date = Date()) -> String? {
+        MenuBarLayout.textTitle(sources: menuBarSources(now: now),
+                                mode: settings.menuBarSummaryMode,
+                                format: settings.perAccountFormat,
+                                usageDisplay: settings.usageDisplay,
+                                showPercentages: settings.showPercentages,
+                                onlyHighest: settings.onlyHighestInMenuBar)
     }
 
     // MARK: - Account management

@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dual usage bars in the menu bar.** Each account can show its five-hour and
+  weekly windows as two stacked mini bars, each coloured by its own severity —
+  so an account with a quiet five-hour window and an exhausted weekly one reads
+  as exactly that at a glance. Drawn with AppKit into an image (exact widths,
+  real colours, two bars inside 22 points), not Unicode blocks.
+- **Three usage displays**: Dual Bars, Single Summary Bar (the worse of the two
+  windows, never their sum) and Text Only. They combine with the existing
+  Detailed / Compact / Minimal Labels name styles.
+- **Mini bar length** — Short, Medium (default) or Long.
+- **A live menu bar preview** in Settings → Display, drawn by the same renderer
+  and the same layout model as the real status item, from the real accounts and
+  their latest values. An account with no data yet previews as `--%` with an
+  empty bar; nothing is invented.
+- **Accessibility labels** on the status item describing every value in words
+  ("Amaete, five-hour usage, 83 percent used, high"), so colour is never the
+  only signal.
+- The dropdown now shows `N% left` alongside `N% used` for each window.
+
 - **Short account labels for the menu bar.** Every account has a
   `shortDisplayName` — derived from its identity (a Claude account from its
   e-mail, an OpenAI account from its plan) and editable as **Menu Bar Name** in
@@ -69,6 +87,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   captured credentials are stored as compact single-line JSON.
 
 ### Changed
+
+- **Both providers now call the same windows "5-hour" and "Weekly".** Claude's
+  short window used to be called "Session", which said nothing about how long it
+  lasts, and OpenAI's were prefixed "Codex". The window each metric represents
+  is classified from the length the provider reports, not assumed. What the
+  OpenAI windows govern — Codex requests rather than ChatGPT messages — moved to
+  the detail line under the bar, where it informs without making every label
+  provider-specific again.
+- **OpenAI's menu bar prefix is now `O`, not `G`.** `G` is reserved for a future
+  Gemini adapter; a badge that has to be relearned later is worse than one
+  chosen correctly now.
+- **The low-usage band is blue rather than green.** Green reads as "good" when
+  the honest meaning is "nothing to think about yet", and it made the amber step
+  look like a failure rather than a heads-up.
+- A failing account now keeps its retained numbers in the menu bar *and* carries
+  a `!`, instead of the number being replaced. Losing the number costs the user
+  the thing they glance at; losing the flag would let a stale number pass as
+  current.
+
+### Removed
+
+- `MenuBarSummary`, superseded by `MenuBarLayout`, which models both windows.
 
 - **Menu bar summary modes renamed so the two different "Minimal" ideas are no
   longer both called Minimal.** The mode is now **Per Account**, **Provider** or

@@ -261,8 +261,14 @@ enum OpenAIUsageParser {
 
         let secs = (d["limit_window_seconds"] as? NSNumber)?.intValue ?? -1
         let windowName = Fmt.windowLabel(secs)
-        // Name from the window the provider reports, never a hard-coded "5-hour".
-        let name = nameOverride ?? "Codex \(windowName)"
+        // The role is decided by the length the provider reports, never
+        // hard-coded — a window that changes length renames itself.
+        let role = UsageWindowRole.forWindowSeconds(secs)
+        // Named the same as Claude's equivalents so the two can be compared at a
+        // glance. What these windows govern — Codex requests rather than ChatGPT
+        // messages — is said in the detail line under the bar, where it informs
+        // without making every label provider-specific again.
+        let name = nameOverride ?? (role == .other ? "Codex \(windowName)" : role.displayName)
 
         // OpenAI always supplies a reset for these windows, so a local weekly
         // rule is only ever a fallback here.
@@ -276,6 +282,8 @@ enum OpenAIUsageParser {
                            resetsAt: resolved.date,
                            resetFromProvider: resolved.fromProvider,
                            windowDescription: windowName,
+                           role: role,
+                           detail: nameOverride == nil ? "Codex requests" : nil,
                            lastUpdated: now,
                            state: .available)
     }
