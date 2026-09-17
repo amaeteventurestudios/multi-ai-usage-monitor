@@ -304,21 +304,27 @@ enum ClaudeUsageParser {
         guard session != nil || weeklyAll != nil else { throw TransportError.emptyUsage }
 
         var metrics: [UsageMetric] = []
+        // Named "5-hour" and "Weekly", the same as OpenAI's equivalents, so a
+        // glance across providers compares like with like. The API calls the
+        // first one `five_hour`; the app used to call it "Session", which said
+        // nothing about how long it lasts.
         if let s = session {
-            metrics.append(metric(id: "claude.session", name: "Session",
-                                  window: "5-hour", value: s,
+            metrics.append(metric(id: "claude.session", name: UsageWindowRole.fiveHour.displayName,
+                                  window: "5-hour", role: .fiveHour, value: s,
                                   account: account, now: now, calendar: calendar,
                                   allowLocalReset: false))
         }
         if let w = weeklyAll {
-            metrics.append(metric(id: "claude.weekly_all", name: "Weekly (all)",
-                                  window: "7-day", value: w,
+            metrics.append(metric(id: "claude.weekly_all", name: UsageWindowRole.weekly.displayName,
+                                  window: "7-day", role: .weekly, value: w,
                                   account: account, now: now, calendar: calendar,
                                   allowLocalReset: true))
         }
         if let ws = weeklyScoped {
+            // A model-scoped weekly allowance sits alongside the overall one; it
+            // is not the window the menu bar draws.
             metrics.append(metric(id: "claude.weekly_scoped", name: "Weekly (\(scopedName))",
-                                  window: "7-day", value: ws,
+                                  window: "7-day", role: .other, value: ws,
                                   account: account, now: now, calendar: calendar,
                                   allowLocalReset: true))
         }
@@ -349,6 +355,7 @@ enum ClaudeUsageParser {
     }
 
     private static func metric(id: String, name: String, window: String,
+                               role: UsageWindowRole,
                                value: Value, account: AIAccount,
                                now: Date, calendar: Calendar,
                                allowLocalReset: Bool) -> UsageMetric {
@@ -364,6 +371,7 @@ enum ClaudeUsageParser {
                            resetsAt: resolved.date,
                            resetFromProvider: resolved.fromProvider,
                            windowDescription: window,
+                           role: role,
                            lastUpdated: now,
                            state: .available)
     }
