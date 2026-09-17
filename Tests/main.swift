@@ -12,5 +12,6 @@ runParsingTests()
 runBehaviourTests()
 runPresentationTests()
 runMenuFormatTests()
+runDualBarTests()
 
 exit(TestRunner.shared.summary())

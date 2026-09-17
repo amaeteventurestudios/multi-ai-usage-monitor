@@ -62,7 +62,7 @@ func runAccountTests() {
             let store = AccountStore(defaults: scratchDefaults())
             let solo = store.add(AIAccount(provider: .openAI, customDisplayName: "Business",
                                            credentialSource: .codexDefault))
-            expectEqual(store.badge(for: solo), "G")
+            expectEqual(store.badge(for: solo), "O")
 
             let c1 = store.add(AIAccount(provider: .claude, customDisplayName: "One",
                                          credentialSource: .claudeCodeKeychain))
@@ -70,7 +70,7 @@ func runAccountTests() {
                                          credentialSource: .appKeychain(id: "x")))
             expectEqual(store.badge(for: c1), "C1")
             expectEqual(store.badge(for: c2), "C2")
-            expectEqual(store.badge(for: solo), "G", "the single OpenAI account stays unnumbered")
+            expectEqual(store.badge(for: solo), "O", "the single OpenAI account stays unnumbered")
         }
 
         test("ordering survives a move and is renumbered contiguously") {

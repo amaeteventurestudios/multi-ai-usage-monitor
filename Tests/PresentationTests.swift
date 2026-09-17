@@ -93,8 +93,8 @@ func runPresentationTests() {
             expectEqual(store.accounts(for: .openAI).count, 2)
             expectEqual(store.badge(for: c1), "C1")
             expectEqual(store.badge(for: c2), "C2")
-            expectEqual(store.badge(for: o1), "G1")
-            expectEqual(store.badge(for: o2), "G2")
+            expectEqual(store.badge(for: o1), "O1")
+            expectEqual(store.badge(for: o2), "O2")
 
             expectEqual(c1.resetOverrides.weekly?.hour, 2)
             expectEqual(c2.resetOverrides.weekly?.hour, 7)

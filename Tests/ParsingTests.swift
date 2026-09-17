@@ -16,6 +16,8 @@ func runParsingTests() {
             expect(ids.contains("claude.weekly_scoped"))
 
             let session = usage.metrics.first { $0.id == "claude.session" }!
+            expectEqual(session.name, "5-hour", "never “Session”, which says nothing about length")
+            expectEqual(session.role, .fiveHour)
             expectEqual(session.usedPercent, 12)
             expectEqual(session.state, .available)
             expect(session.resetFromProvider, "the API supplied this reset")
@@ -104,24 +106,43 @@ func runParsingTests() {
 
     suite("OpenAI response parsing") {
 
-        test("windows are named from the length the provider reports") {
+        test("windows are named and classified from the length the provider reports") {
             let usage = try OpenAIUsageParser.parse(fixture("openai-usage.sample.json"),
                                                     account: makeAccount(.openAI), now: now, calendar: cal)
             let primary = usage.metrics.first { $0.id == "openai.primary" }!
-            expectEqual(primary.name, "Codex Weekly", "604800s is a week")
+            expectEqual(primary.name, "Weekly", "604800s is a week")
+            expectEqual(primary.role, .weekly)
             expectEqual(primary.usedPercent, 89)
 
             let secondary = usage.metrics.first { $0.id == "openai.secondary" }!
-            expectEqual(secondary.name, "Codex 5-hour", "18000s, read from the response")
+            expectEqual(secondary.name, "5-hour", "18000s, read from the response")
+            expectEqual(secondary.role, .fiveHour)
             expectEqual(secondary.usedPercent, 22)
         }
 
-        test("metrics are named Codex, because that is what this endpoint measures") {
+        test("both providers name the same window the same way") {
+            let openAI = try OpenAIUsageParser.parse(fixture("openai-usage.sample.json"),
+                                                     account: makeAccount(.openAI),
+                                                     now: now, calendar: cal)
+            let claude = try ClaudeUsageParser.parse(fixture("claude-usage.sample.json"),
+                                                     account: makeAccount(.claude),
+                                                     now: now, calendar: cal)
+            for role in [UsageWindowRole.fiveHour, .weekly] {
+                expectEqual(openAI.metric(for: role)?.name, role.displayName)
+                expectEqual(claude.metric(for: role)?.name, role.displayName,
+                            "so a glance across providers compares like with like")
+            }
+        }
+
+        test("what the OpenAI windows actually govern is still stated") {
             let usage = try OpenAIUsageParser.parse(fixture("openai-usage.sample.json"),
                                                     account: makeAccount(.openAI), now: now, calendar: cal)
-            let named = usage.metrics.filter { $0.usedPercent != nil }
-            expect(named.allSatisfy { $0.name.hasPrefix("Codex") },
-                   "no generic “ChatGPT Weekly” that could mean either product")
+            // The names are shared with Claude now, so the qualifier moves to the
+            // detail line rather than being lost: these windows govern Codex
+            // requests, not ChatGPT messages.
+            expectEqual(usage.metric(for: .weekly)?.detail, "Codex requests")
+            expectEqual(usage.metric(for: .fiveHour)?.detail, "Codex requests")
+            expectEqual(usage.metrics.first { $0.id == "openai.pro_messages" }?.state, .unsupported)
         }
 
         test("ChatGPT message allowance is present but honestly unavailable") {
